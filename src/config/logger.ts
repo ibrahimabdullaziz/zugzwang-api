@@ -1,7 +1,8 @@
 import pino, { type Bindings, type Logger } from 'pino';
+import { config } from './env.js';
 
 const logger = pino({
-  level: process.env.LOG_LEVEL ?? 'info',
+  level: config.logging.level,
   redact: {
     paths: [
       'req.headers.authorization',
@@ -10,7 +11,7 @@ const logger = pino({
       'refreshToken',
     ],
   },
-  ...((process.env.NODE_ENV ?? 'development') === 'development'
+  ...(config.server.nodeEnv === 'development'
     ? {
         transport: {
           target: 'pino-pretty',
