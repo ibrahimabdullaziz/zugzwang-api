@@ -1,7 +1,187 @@
+enum Role {
+  USER
+  ADMIN
+}
+
+enum GameMode {
+  PVP
+  VS_ENGINE
+}
+
+enum GameStatus {
+  WAITING
+  ACTIVE
+  FINISHED
+  ABANDONED
+}
+
+enum GameResult {
+  WHITE_WIN
+  BLACK_WIN
+  DRAW
+}
+
+enum ResultReason {
+  CHECKMATE
+  RESIGNATION
+  TIMEOUT
+  STALEMATE
+  INSUFFICIENT_MATERIAL
+  THREEFOLD
+  FIFTY_MOVE
+  DRAW_AGREEMENT
+  ABANDONED
+}
+
+enum RatingCategory {
+  BULLET
+  BLITZ
+  RAPID
+}
+
+enum AnalysisStatus {
+  PENDING
+  RUNNING
+  DONE
+  FAILED
+}
+
+enum MoveClass {
+  BEST
+  GOOD
+  INACCURACY
+  MISTAKE
+  BLUNDER
+}
+
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
+}
+
+model User {
+  id              String   @id @default(uuid())
+  email           String   @unique
+  username        String   @unique
+  passwordHash    String
+  role            Role     @default(USER)
+  emailVerifiedAt DateTime?
+  createdAt       DateTime @default(now())
+  ratings         Rating[]
+  refreshTokens   RefreshToken[]
+  whiteGames      Game[]   @relation("White")
+  blackGames      Game[]   @relation("Black")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  familyId  String            
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+  @@index([userId])
+  @@index([familyId])
+}
+
+model Rating {
+  id          String         @id @default(uuid())
+  userId      String
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category    RatingCategory
+  value       Int            @default(1200)
+  gamesPlayed Int            @default(0)
+  updatedAt   DateTime       @updatedAt
+  @@unique([userId, category])
+  @@index([category, value(sort: Desc)]) 
+}
+
+model RatingHistory {
+  id        String         @id @default(uuid())
+  userId    String
+  gameId    String
+  category  RatingCategory
+  before    Int
+  after     Int
+  createdAt DateTime       @default(now())
+  @@index([userId, createdAt])
+}
+
+model Game {
+  id             String        @id @default(uuid())
+  inviteCode     String?       @unique
+  mode           GameMode      @default(PVP)
+  status         GameStatus    @default(WAITING)
+  rated          Boolean       @default(true)
+  whiteId        String?
+  blackId        String?       // null for engine side
+  white          User?         @relation("White", fields: [whiteId], references: [id])
+  black          User?         @relation("Black", fields: [blackId], references: [id])
+  engineLevel    Int?
+  category       RatingCategory
+  baseSeconds    Int
+  incrementSecs  Int           @default(0)
+  result         GameResult?
+  reason         ResultReason?
+  finalFen       String?
+  pgn            String?
+  whiteRatingBefore Int?
+  blackRatingBefore Int?
+  whiteRatingAfter  Int?
+  blackRatingAfter  Int?
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  createdAt      DateTime      @default(now())
+  moves          Move[]
+  analysis       GameAnalysis?
+  @@index([whiteId, createdAt(sort: Desc)])
+  @@index([blackId, createdAt(sort: Desc)])
+  @@index([status])
+}
+
+model Move {
+  id           String   @id @default(uuid())
+  gameId       String
+  game         Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  ply          Int
+  san          String
+  uci          String
+  fenAfter     String
+  timeSpentMs  Int
+  clockAfterMs Int
+  createdAt    DateTime @default(now())
+  @@unique([gameId, ply])     
+}
+
+model GameAnalysis {
+  id            String         @id @default(uuid())
+  gameId        String         @unique 
+  game          Game           @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  status        AnalysisStatus @default(PENDING)
+  depth         Int
+  accuracyWhite Float?
+  accuracyBlack Float?
+  failureReason String?
+  moves         MoveAnalysis[]
+  createdAt     DateTime       @default(now())
+  completedAt   DateTime?
+}
+
+
+model MoveAnalysis {
+  id          String       @id @default(uuid())
+  analysisId  String
+  analysis    GameAnalysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  ply         Int
+  evalBeforeCp Int
+  evalAfterCp  Int
+  bestMoveUci String
+  winPctDrop  Float
+  class       MoveClass
+  @@unique([analysisId, ply])
 }

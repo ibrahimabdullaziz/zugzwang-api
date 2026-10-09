@@ -16,4 +16,3 @@ if (isDevelopment) {
     logger.debug({ query, duration }, 'Prisma query');
   });
 }
-/
