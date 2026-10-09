@@ -1,7 +1,6 @@
 import { z } from 'zod';
 
 const booleanFromEnv = z.enum(['true', 'false']).transform((value) => value === 'true');
-const jwtTtl = z.string().regex(/^[1-9]\d*[smhdw]$/, 'must be a duration such as 15m or 7d');
 
 const envSchema = z
   .object({
@@ -17,9 +16,6 @@ const envSchema = z
     REDIS_URL: z.string().url(),
 
     JWT_ACCESS_SECRET: z.string().min(32, 'must be at least 32 characters'),
-    JWT_REFRESH_SECRET: z.string().min(32, 'must be at least 32 characters'),
-    JWT_ACCESS_TTL: jwtTtl.default('15m'),
-    JWT_REFRESH_TTL: jwtTtl.default('7d'),
 
     ENGINE_PATH: z.string().trim().min(1).default('stockfish'),
     ENGINE_POOL_SIZE: z.coerce.number().int().min(1).default(2),
@@ -88,9 +84,6 @@ export const config = Object.freeze({
   }),
   jwt: Object.freeze({
     accessSecret: env.JWT_ACCESS_SECRET,
-    refreshSecret: env.JWT_REFRESH_SECRET,
-    accessTtl: env.JWT_ACCESS_TTL,
-    refreshTtl: env.JWT_REFRESH_TTL,
   }),
   engine: Object.freeze({
     binaryPath: env.ENGINE_PATH,
