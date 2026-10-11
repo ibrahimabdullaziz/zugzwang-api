@@ -52,6 +52,6 @@ export async function findByIdWithRatings(id: string) {
 export async function updateProfile(id: string, username: string): Promise<User> {
   return await prisma.user.update({
     where: { id },
-    data: { username: username },
+    data: { username },
   });
 }

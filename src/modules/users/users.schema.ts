@@ -22,10 +22,6 @@ export const updateProfileSchema = z.object({
   username: z.string().trim().min(3).max(30),
 });
 
-export const searchUsersSchema = z.object({
-  search: z.string().trim().min(1),
-});
-
 export const usernameParamSchema = z.object({
   username: z.string().trim().min(1),
 });

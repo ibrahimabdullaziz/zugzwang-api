@@ -3,9 +3,15 @@ import { Router } from 'express';
 import { createApp } from './app.js';
 import { config } from './config/env.js';
 import { logger } from './config/logger.js';
+import { authRouter } from './modules/auth/auth.routes.js';
+import { usersRouter } from './modules/users/users.routes.js';
+
+const apiRouter = Router();
+apiRouter.use('/auth', authRouter);
+apiRouter.use('/users', usersRouter);
 
 const app = createApp({
-  routes: Router(),
+  routes: apiRouter,
   corsOrigins: config.server.corsOrigins,
 });
 

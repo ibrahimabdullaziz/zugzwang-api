@@ -4,7 +4,9 @@ import {
   findByEmail as findUserByEmail,
   create as createUser,
   findByUsername as findUserByUsername,
+  findByUsernameWithRatings,
   findById as findUserById,
+  findByIdWithRatings,
   updateProfile as updateUserProfile,
 } from './users.repository.js';
 import { AppError } from '../../common/errors/AppError.js';
@@ -13,12 +15,18 @@ import { hashPassword } from '../../common/security/password.js';
 
 export type SafeUser = Omit<User, 'passwordHash'>;
 
+export function toSafeUser(user: User): SafeUser {
+  const { passwordHash, ...safeUser } = user;
+  void passwordHash;
+  return safeUser;
+}
+
 export async function create(data: CreateUserInput): Promise<SafeUser> {
-  const { email, password, username, ...newData } = data;
+  const { email, password, username } = data;
 
   const [existingEmail, existingUsername] = await Promise.all([
     findUserByEmail(email),
-    username ? findUserByUsername(username) : null,
+    findUserByUsername(username),
   ]);
 
   if (existingEmail) {
@@ -35,12 +43,9 @@ export async function create(data: CreateUserInput): Promise<SafeUser> {
     email,
     username,
     passwordHash: hashedPassword,
-    ...newData,
   });
 
-  const { passwordHash, ...safeUser } = user;
-  void passwordHash;
-  return safeUser;
+  return toSafeUser(user);
 }
 
 export async function findByEmail(email: string): Promise<User | null> {
@@ -55,16 +60,42 @@ export async function findById(id: string): Promise<User | null> {
   return findUserById(id);
 }
 
-export async function updateProfile(id: string, data: string): Promise<SafeUser> {
+export async function getProfileByUsername(username: string) {
+  const user = await findByUsernameWithRatings(username);
+  if (!user) {
+    throw new AppError(ErrorCode.NOT_FOUND, 404, `User ${username} not found.`);
+  }
+
+  const { passwordHash, ...safeUser } = user;
+  void passwordHash;
+  return safeUser;
+}
+
+export async function getProfileById(id: string) {
+  const user = await findByIdWithRatings(id);
+  if (!user) {
+    throw new AppError(ErrorCode.NOT_FOUND, 404, 'User not found.');
+  }
+
+  const { passwordHash, ...safeUser } = user;
+  void passwordHash;
+  return safeUser;
+}
+
+export async function updateProfile(id: string, username: string): Promise<SafeUser> {
   const user = await findById(id);
 
   if (!user) {
     throw new AppError(ErrorCode.NOT_FOUND, 404, 'User Not Found.');
   }
 
-  const updatedUser = await updateUserProfile(id, data);
-  const { passwordHash, ...safeUser } = updatedUser;
-  void passwordHash;
+  if (username !== user.username) {
+    const existing = await findUserByUsername(username);
+    if (existing) {
+      throw new AppError(ErrorCode.CONFLICT, 409, 'Username already exists.');
+    }
+  }
 
-  return safeUser;
+  const updatedUser = await updateUserProfile(id, username);
+  return toSafeUser(updatedUser);
 }
