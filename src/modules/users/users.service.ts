@@ -1,30 +1,47 @@
-import { User } from '@prisma/client';
+import type { CreateUserInput } from './users.schema.js';
+import type { User } from '@prisma/client';
 import {
-  CreateUserInput,
   findByEmail as findUserByEmail,
   create as createUser,
   findByUsername as findUserByUsername,
   findById as findUserById,
   updateProfile as updateUserProfile,
-  UpdateProfileInput,
+  type UpdateProfileInput,
 } from './users.repository.js';
 import { AppError } from '../../common/errors/AppError.js';
 import { ErrorCode } from '../../common/errors/codes.js';
 import { hashPassword } from '../../common/security/password.js';
 
-type CreateUserServiceInput = Omit<CreateUserInput, 'passwordHash'> & {
-  password: string;
-};
+export type SafeUser = Omit<User, 'passwordHash'>;
 
-export async function create(data: CreateUserServiceInput): Promise<User> {
-  const { email, password, ...newData } = data;
-  if (await findUserByEmail(email)) {
+export async function create(data: CreateUserInput): Promise<SafeUser> {
+  const { email, password, username, ...newData } = data;
+
+  const [existingEmail, existingUsername] = await Promise.all([
+    findUserByEmail(email),
+    username ? findUserByUsername(username) : null,
+  ]);
+
+  if (existingEmail) {
     throw new AppError(ErrorCode.CONFLICT, 409, 'Email already exists.');
+  }
+
+  if (existingUsername) {
+    throw new AppError(ErrorCode.CONFLICT, 409, 'Username already exists.');
   }
 
   const hashedPassword = await hashPassword(password);
 
-  return createUser({ email, passwordHash: hashedPassword, ...newData });
+  const user = await createUser({
+    email,
+    username,
+    passwordHash: hashedPassword,
+    ...newData,
+  });
+
+  const { passwordHash, ...safeUser } = user;
+  void passwordHash;
+  return safeUser;
 }
 
 export async function findByEmail(email: string): Promise<User | null> {
@@ -36,10 +53,10 @@ export async function findByUsername(username: string): Promise<User | null> {
 }
 
 export async function findById(id: string): Promise<User | null> {
-  return await findUserById(id);
+  return findUserById(id);
 }
 
-export async function updateProfile(id: string, data: UpdateProfileInput): Promise<User> {
+export async function updateProfile(id: string, data: UpdateProfileInput): Promise<SafeUser> {
   const user = await findById(id);
 
   if (!user) {
@@ -47,5 +64,8 @@ export async function updateProfile(id: string, data: UpdateProfileInput): Promi
   }
 
   const updatedUser = await updateUserProfile(id, data);
-  return updatedUser;
+  const { passwordHash, ...safeUser } = updatedUser;
+  void passwordHash;
+
+  return safeUser;
 }
