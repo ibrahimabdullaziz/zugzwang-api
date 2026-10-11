@@ -3,6 +3,9 @@ import { AppError } from '../errors/AppError.js';
 import { ErrorCode } from '../errors/codes.js';
 import { logger } from '../../config/logger.js';
 
+export const DUMMY_PASSWORD_HASH =
+  '$argon2id$v=19$m=65536,p=1,t=3$FlPUugqvWgZR8zkQMvLm6Q$Fx/SKwPBov3bB5yLnoZosRJbnM0sANzfJhckVOhS6FU';
+
 export async function hashPassword(password: string): Promise<string> {
   try {
     const hashedPassword = await argon2.hash(password, {
@@ -21,7 +24,7 @@ export async function hashPassword(password: string): Promise<string> {
 
 export async function verifyPassword(password: string, hash: string): Promise<boolean> {
   try {
-    const isMatch = await argon2.verify(password, hash);
+    const isMatch = await argon2.verify(hash, password);
 
     return isMatch;
   } catch (err) {

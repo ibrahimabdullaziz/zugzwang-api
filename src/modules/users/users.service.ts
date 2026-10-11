@@ -6,7 +6,6 @@ import {
   findByUsername as findUserByUsername,
   findById as findUserById,
   updateProfile as updateUserProfile,
-  type UpdateProfileInput,
 } from './users.repository.js';
 import { AppError } from '../../common/errors/AppError.js';
 import { ErrorCode } from '../../common/errors/codes.js';
@@ -56,7 +55,7 @@ export async function findById(id: string): Promise<User | null> {
   return findUserById(id);
 }
 
-export async function updateProfile(id: string, data: UpdateProfileInput): Promise<SafeUser> {
+export async function updateProfile(id: string, data: string): Promise<SafeUser> {
   const user = await findById(id);
 
   if (!user) {
