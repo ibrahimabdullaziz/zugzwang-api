@@ -1,8 +1,9 @@
+import { ResultReason, GameResult } from '@prisma/client';
 import { Chess } from 'chess.js';
 import { isValidUci, parseUci } from './uci.js';
 import { AppError } from '../../common/errors/AppError.js';
 import { ErrorCode } from '../../common/errors/codes.js';
-import { Color } from './types.js';
+import { Color, OutCome } from './types.js';
 
 export class ChessGame {
   private readonly chess: Chess;
@@ -37,6 +38,43 @@ export class ChessGame {
     return { san: move.san, fen: this.chess.fen() };
   }
 
+  getOutcome(): OutCome | null {
+    if (!this.chess.isGameOver()) return null;
+
+    if (this.chess.isCheckmate()) {
+      if (this.chess.turn() === 'b') {
+        return {
+          result: GameResult.WHITE_WIN,
+          reason: ResultReason.CHECKMATE,
+        };
+      } else {
+        return { result: GameResult.BLACK_WIN, reason: ResultReason.CHECKMATE };
+      }
+    }
+
+    if (this.chess.isStalemate()) {
+      return { result: GameResult.DRAW, reason: ResultReason.STALEMATE };
+    }
+
+    if (this.chess.isInsufficientMaterial()) {
+      return { result: GameResult.DRAW, reason: ResultReason.INSUFFICIENT_MATERIAL };
+    }
+
+    if (this.chess.isThreefoldRepetition()) {
+      return { result: GameResult.DRAW, reason: ResultReason.THREEFOLD };
+    }
+
+    if (this.chess.isDrawByFiftyMoves()) {
+      return { result: GameResult.DRAW, reason: ResultReason.FIFTY_MOVE };
+    }
+
+    if (parseInt(this.chess.fen().split(' ')[4] ?? '0', 10) >= 100) {
+      return { result: GameResult.DRAW, reason: ResultReason.FIFTY_MOVE };
+    }
+
+    return null;
+  }
+
   get fen(): string {
     return this.chess.fen();
   }
@@ -55,5 +93,9 @@ export class ChessGame {
 
   get history(): string[] {
     return this.chess.history();
+  }
+
+  get verboseHistory() {
+    return this.chess.history({ verbose: true });
   }
 }
