@@ -38,6 +38,12 @@ export class ChessGame {
     return { san: move.san, fen: this.chess.fen() };
   }
 
+  getLegalMoves(): string[] {
+    return this.chess.moves({ verbose: true }).map(
+      ({ from, to, promotion }) => `${from}${to}${promotion ?? ''}`,
+    );
+  }
+
   getOutcome(): OutCome | null {
     if (!this.chess.isGameOver()) return null;
 

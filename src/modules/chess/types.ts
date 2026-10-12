@@ -17,11 +17,11 @@ export interface TimeControl {
 }
 
 export interface PgnParams {
-  white: string; // username or 'Anonymous'
+  white: string;
   black: string;
   date: Date;
-  result: GameResult | null; // null if game is still ongoing
+  result: GameResult | null;
   reason: ResultReason | null;
-  timeControl: TimeControl; // { baseSeconds, incrementSecs }
-  moves: string[]; // array of SAN moves in order e.g. ['e4', 'e5', 'Nf3']
+  timeControl: TimeControl;
+  moves: string[];
 }

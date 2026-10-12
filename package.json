@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:seed": "tsx prisma/seed.ts",
+    "play:random": "tsx src/scripts/play-random.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.0",
