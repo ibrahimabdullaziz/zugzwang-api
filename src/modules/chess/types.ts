@@ -1,4 +1,4 @@
-import { GameResult, ResultReason } from '@prisma/client';
+import { GameResult, GameStatus, ResultReason } from '@prisma/client';
 
 export type Color = 'w' | 'b';
 export type UCI = string;
@@ -24,4 +24,12 @@ export interface PgnParams {
   reason: ResultReason | null;
   timeControl: TimeControl;
   moves: string[];
+}
+
+export interface FinishGameData {
+  status: typeof GameStatus.FINISHED | typeof GameStatus.ABANDONED;
+  result: GameResult;
+  reason: ResultReason;
+  finalFen: string;
+  pgn: string;
 }
