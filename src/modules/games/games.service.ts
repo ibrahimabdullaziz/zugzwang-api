@@ -11,8 +11,9 @@ import {
 import { AppError } from '../../common/errors/AppError.js';
 import { ErrorCode } from '../../common/errors/codes.js';
 import { Game, RatingCategory } from '@prisma/client';
-import { nanoid } from 'zod';
 import { buildPgn } from '../chess/pgn.js';
+import { nanoid } from 'nanoid';
+import { INVITE_CODE_LENGTH } from './games.schema.js';
 
 function determineRatingCategory(timeControl: TimeControl): RatingCategory {
   const estimatedSeconds: number = timeControl.baseSeconds + 40 * timeControl.incrementSecs;
@@ -24,6 +25,26 @@ function determineRatingCategory(timeControl: TimeControl): RatingCategory {
   } else {
     return RatingCategory.RAPID;
   }
+}
+
+export async function getGame(gameId: string) {
+  const game = await findById(gameId, true);
+
+  if (!game) {
+    throw new AppError(ErrorCode.GAME_NOT_FOUND, 404, 'Game not found');
+  }
+
+  return game;
+}
+
+export async function getGameMoves(gameId: string) {
+  const game = (await findById(gameId, true)) as (Game & { moves: unknown[] }) | null;
+
+  if (!game) {
+    throw new AppError(ErrorCode.GAME_NOT_FOUND, 404, 'Game not found');
+  }
+
+  return game.moves;
 }
 
 export async function createChallenge(
@@ -46,7 +67,7 @@ export async function createChallenge(
     blackId = userId;
   }
 
-  const inviteCode = nanoid('invite code');
+  const inviteCode = nanoid(INVITE_CODE_LENGTH);
 
   return create({
     category: ratingCategory,
@@ -55,8 +76,8 @@ export async function createChallenge(
     ...timeControl,
     rated,
     inviteCode,
-    white: whiteId,
-    black: blackId,
+    white: whiteId ? { connect: { id: whiteId } } : undefined,
+    black: blackId ? { connect: { id: blackId } } : undefined,
   });
 }
 
@@ -86,11 +107,15 @@ export async function resign(userId: string, gameId: string) {
   }
 
   if (game.status !== 'ACTIVE') {
-    throw new AppError(ErrorCode.NOT_FOUND, 400, 'game is not active');
+    throw new AppError(ErrorCode.GAME_IN_PROGRESS, 400, 'game is not active');
   }
 
-  if (userId !== game.whiteId || userId !== game.blackId) {
+  if (userId !== game.whiteId && userId !== game.blackId) {
     throw new AppError(ErrorCode.UNAUTHORIZED, 403, 'You are not Authorized');
+  }
+
+  if (!game.whiteId || !game.blackId) {
+    throw new AppError(ErrorCode.VALIDATION_ERROR, 400, 'Game participants are missing');
   }
 
   const outCome: OutCome = {
@@ -127,11 +152,15 @@ export async function abort(userId: string, gameId: string) {
   }
 
   if (game.status !== 'ACTIVE') {
-    throw new AppError(ErrorCode.NOT_FOUND, 400, 'game is not active');
+    throw new AppError(ErrorCode.GAME_IN_PROGRESS, 400, 'game is not active');
   }
 
-  if (userId !== game.whiteId || userId !== game.blackId) {
+  if (userId !== game.whiteId && userId !== game.blackId) {
     throw new AppError(ErrorCode.UNAUTHORIZED, 403, 'You are not Authorized');
+  }
+
+  if (!game.whiteId || !game.blackId) {
+    throw new AppError(ErrorCode.VALIDATION_ERROR, 400, 'Game participants are missing');
   }
 
   const recordedMoves = new Chess();
@@ -139,30 +168,36 @@ export async function abort(userId: string, gameId: string) {
     recordedMoves.loadPgn(game.pgn);
   }
 
-  if (recordedMoves.history().length <= 1) {
-    const outCome: OutCome = {
-      result: 'DRAW',
-      reason: 'ABORTION',
-    };
-
-    const pgn = buildPgn({
-      white: game.whiteId,
-      black: game.blackId,
-      date: game.createdAt,
-      result: outCome.result,
-      reason: outCome.reason,
-      timeControl: {
-        baseSeconds: game.baseSeconds,
-        incrementSecs: game.incrementSecs,
-      },
-      moves: [],
-    });
-
-    return finish(gameId, {
-      status: 'FINISHED',
-      ...outCome,
-      pgn,
-      finalFen: new Chess().fen(),
-    });
+  if (recordedMoves.history().length > 1) {
+    throw new AppError(
+      ErrorCode.GAME_IN_PROGRESS,
+      400,
+      'Game can only be aborted before the first move has been made',
+    );
   }
+
+  const outCome: OutCome = {
+    result: 'DRAW',
+    reason: 'ABANDONED',
+  };
+
+  const pgn = buildPgn({
+    white: game.whiteId,
+    black: game.blackId,
+    date: game.createdAt,
+    result: outCome.result,
+    reason: outCome.reason,
+    timeControl: {
+      baseSeconds: game.baseSeconds,
+      incrementSecs: game.incrementSecs,
+    },
+    moves: [],
+  });
+
+  return finish(gameId, {
+    status: 'FINISHED',
+    ...outCome,
+    pgn,
+    finalFen: new Chess().fen(),
+  });
 }
