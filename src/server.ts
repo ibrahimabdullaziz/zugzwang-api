@@ -6,6 +6,7 @@ import { logger } from './config/logger.js';
 import { authRouter } from './modules/auth/auth.routes.js';
 import { gamesRouter } from './modules/games/games.routes.js';
 import { usersRouter } from './modules/users/users.routes.js';
+import { createSocketServer } from './realtime/socketServer.js';
 
 const apiRouter = Router();
 apiRouter.use('/auth', authRouter);
@@ -18,6 +19,10 @@ const app = createApp({
 });
 
 const server = createServer(app);
+createSocketServer(server, {
+  logger,
+  corsOrigin: config.server.corsOrigins,
+});
 
 server.on('error', (error) => {
   logger.error({ err: error }, 'HTTP server failed');

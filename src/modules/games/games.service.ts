@@ -1,4 +1,5 @@
 import { Chess, Color } from 'chess.js';
+import { ChessGame } from '../chess/chessGame.js';
 import { OutCome, TimeControl } from '../chess/types.js';
 import {
   create,
@@ -58,14 +59,9 @@ export async function createChallenge(
   }
 
   const ratingCategory = determineRatingCategory(timeControl);
-  let whiteId = null;
-  let blackId = null;
-
-  if (color === 'w') {
-    whiteId = userId;
-  } else {
-    blackId = userId;
-  }
+  const chosenColor: Color = color ?? (Math.random() < 0.5 ? 'w' : 'b');
+  const whiteId = chosenColor === 'w' ? userId : null;
+  const blackId = chosenColor === 'b' ? userId : null;
 
   const inviteCode = nanoid(INVITE_CODE_LENGTH);
 
@@ -84,34 +80,45 @@ export async function createChallenge(
 export async function joinByCode(userId: string, code: string): Promise<Game | null> {
   const game = await findByInviteCode(code);
   if (!game) {
-    throw new AppError(ErrorCode.NOT_FOUND, 404, 'Not Found');
+    throw new AppError(ErrorCode.GAME_NOT_FOUND, 404, 'Game not found');
+  }
+
+  if (game.status !== 'WAITING') {
+    throw new AppError(ErrorCode.CONFLICT, 409, 'Game is not waiting for players');
   }
 
   if (game.whiteId === userId || game.blackId === userId) {
-    throw new AppError(ErrorCode.FORBIDDEN, 403, 'you are forbidden from this action');
+    throw new AppError(ErrorCode.FORBIDDEN, 403, 'You cannot join your own game');
   }
 
   if (await findActiveByUser(userId)) {
-    throw new AppError(ErrorCode.CONFLICT, 409, 'you already in active game');
+    throw new AppError(ErrorCode.CONFLICT, 409, 'You already have an active game');
   }
 
-  const confirmedGame = await joinGameConditional(game.id);
+  const slot = game.whiteId ? 'blackId' : 'whiteId';
+  const confirmedGame = await joinGameConditional(game.id, slot, userId);
   return confirmedGame;
 }
 
 export async function resign(userId: string, gameId: string) {
-  const game = await findById(gameId);
+  const game = (await findById(gameId, true)) as
+    | (Game & {
+        moves?: { uci: string; san: string }[];
+        white?: { id: string; username: string } | null;
+        black?: { id: string; username: string } | null;
+      })
+    | null;
 
   if (!game) {
-    throw new AppError(ErrorCode.NOT_FOUND, 404, 'Not Found');
+    throw new AppError(ErrorCode.GAME_NOT_FOUND, 404, 'Game not found');
   }
 
   if (game.status !== 'ACTIVE') {
-    throw new AppError(ErrorCode.GAME_IN_PROGRESS, 400, 'game is not active');
+    throw new AppError(ErrorCode.GAME_IN_PROGRESS, 400, 'Game is not active');
   }
 
   if (userId !== game.whiteId && userId !== game.blackId) {
-    throw new AppError(ErrorCode.UNAUTHORIZED, 403, 'You are not Authorized');
+    throw new AppError(ErrorCode.FORBIDDEN, 403, 'You are not a participant in this game');
   }
 
   if (!game.whiteId || !game.blackId) {
@@ -123,9 +130,12 @@ export async function resign(userId: string, gameId: string) {
     reason: 'RESIGNATION',
   };
 
+  const movesList = game.moves ?? [];
+  const chess = ChessGame.fromMoves(movesList.map((m) => m.uci));
+
   const pgn = buildPgn({
-    white: game.whiteId,
-    black: game.blackId,
+    white: game.white?.username ?? game.whiteId,
+    black: game.black?.username ?? game.blackId,
     date: game.createdAt,
     result: outCome.result,
     reason: outCome.reason,
@@ -133,42 +143,43 @@ export async function resign(userId: string, gameId: string) {
       baseSeconds: game.baseSeconds,
       incrementSecs: game.incrementSecs,
     },
-    moves: [],
+    moves: movesList.map((m) => m.san),
   });
 
   return await finish(gameId, {
     status: 'FINISHED',
     ...outCome,
     pgn,
-    finalFen: new Chess().fen(),
+    finalFen: chess.fen,
   });
 }
 
 export async function abort(userId: string, gameId: string) {
-  const game = await findById(gameId);
+  const game = (await findById(gameId, true)) as
+    | (Game & {
+        moves?: { uci: string; san: string }[];
+        white?: { id: string; username: string } | null;
+        black?: { id: string; username: string } | null;
+      })
+    | null;
 
   if (!game) {
-    throw new AppError(ErrorCode.NOT_FOUND, 404, 'Not Found');
+    throw new AppError(ErrorCode.GAME_NOT_FOUND, 404, 'Game not found');
   }
 
   if (game.status !== 'ACTIVE') {
-    throw new AppError(ErrorCode.GAME_IN_PROGRESS, 400, 'game is not active');
+    throw new AppError(ErrorCode.GAME_IN_PROGRESS, 400, 'Game is not active');
   }
 
   if (userId !== game.whiteId && userId !== game.blackId) {
-    throw new AppError(ErrorCode.UNAUTHORIZED, 403, 'You are not Authorized');
+    throw new AppError(ErrorCode.FORBIDDEN, 403, 'You are not a participant in this game');
   }
 
   if (!game.whiteId || !game.blackId) {
     throw new AppError(ErrorCode.VALIDATION_ERROR, 400, 'Game participants are missing');
   }
 
-  const recordedMoves = new Chess();
-  if (game.pgn) {
-    recordedMoves.loadPgn(game.pgn);
-  }
-
-  if (recordedMoves.history().length > 1) {
+  if (game.moves && game.moves.length > 0) {
     throw new AppError(
       ErrorCode.GAME_IN_PROGRESS,
       400,
@@ -182,8 +193,8 @@ export async function abort(userId: string, gameId: string) {
   };
 
   const pgn = buildPgn({
-    white: game.whiteId,
-    black: game.blackId,
+    white: game.white?.username ?? game.whiteId,
+    black: game.black?.username ?? game.blackId,
     date: game.createdAt,
     result: outCome.result,
     reason: outCome.reason,
@@ -195,7 +206,7 @@ export async function abort(userId: string, gameId: string) {
   });
 
   return finish(gameId, {
-    status: 'FINISHED',
+    status: 'ABANDONED',
     ...outCome,
     pgn,
     finalFen: new Chess().fen(),

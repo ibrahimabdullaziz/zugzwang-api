@@ -73,7 +73,7 @@ export async function finish(gameId: string, data: FinishGameData): Promise<Game
       throw new AppError(ErrorCode.GAME_NOT_FOUND, 404, 'Game not found');
     }
     if (game.status !== 'ACTIVE') {
-      throw new AppError(ErrorCode.GAME_IN_PROGRESS, 400, 'game still active');
+      throw new AppError(ErrorCode.GAME_IN_PROGRESS, 400, 'Game is not active');
     }
     return await tx.game.update({
       where: { id: gameId },
@@ -96,17 +96,31 @@ export async function findActiveByUser(userId: string): Promise<Game | null> {
   });
 }
 
-export async function joinGameConditional(gameId: string): Promise<Game | null> {
+export async function joinGameConditional(
+  gameId: string,
+  slot: 'whiteId' | 'blackId',
+  userId: string,
+): Promise<Game | null> {
   return await prisma.$transaction(async (tx) => {
     const result = await tx.game.updateMany({
-      where: { id: gameId, status: 'WAITING' },
-      data: { status: 'ACTIVE' },
+      where: { id: gameId, status: 'WAITING', [slot]: null },
+      data: {
+        [slot]: userId,
+        status: 'ACTIVE',
+        startedAt: new Date(),
+      },
     });
 
     if (result.count === 0) {
       throw new AppError(ErrorCode.CONFLICT, 409, 'Game has already been joined');
     }
 
-    return await tx.game.findUnique({ where: { id: gameId } });
+    return await tx.game.findUnique({
+      where: { id: gameId },
+      include: {
+        white: { select: { id: true, username: true } },
+        black: { select: { id: true, username: true } },
+      },
+    });
   });
 }

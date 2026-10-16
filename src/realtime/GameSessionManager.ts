@@ -19,15 +19,22 @@ export class GameSessionManager {
 
     const game = await findById(gameId, true);
 
-    if (!game || game.status === 'FINISHED') return null;
+    if (!game || game.status === 'FINISHED' || game.status === 'ABANDONED') return null;
+
+    const rawMoves = (game as { moves?: { uci: string }[] }).moves ?? [];
+    const initialMoves = rawMoves.map((m) => m.uci);
 
     const session = new GameSession({
       gameId: game.id,
       whiteId: game.whiteId!,
       blackId: game.blackId!,
       category: game.category,
-      timeControl: Reflect.get(game, 'timeControl'),
+      timeControl: {
+        baseSeconds: game.baseSeconds,
+        incrementSecs: game.incrementSecs,
+      },
       game,
+      initialMoves,
     });
     this.sessions.set(gameId, session);
     return session;

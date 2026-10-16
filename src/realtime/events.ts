@@ -36,7 +36,7 @@ interface SocketData {
 
 export type RealtimeServer = Server<
   ClientToServerEvents,
-  InterServerEvents,
   ServerToClientEvents,
+  InterServerEvents,
   SocketData
 >;

@@ -2,22 +2,21 @@ import { Server, Socket } from 'socket.io';
 import { verifyAccessToken } from '../common/security/tokens.js';
 import { AppError } from '../common/errors/AppError.js';
 import { ErrorCode } from '../common/errors/codes.js';
-import { Http2Server } from 'node:http2';
+import type { Server as HttpServer } from 'node:http';
 import { Logger } from 'pino';
 import { findById as findGameById } from '../modules/games/games.repository.js';
 import { GameSessionManager } from './GameSessionManager.js';
 
 interface SocketServerDeps {
   logger: Logger;
-  corsOrigin: string | string[];
-  // sessionManager: GameSessionManager;
+  corsOrigin: string | readonly string[];
 }
 
-export async function createSocketServer(httpServer: Http2Server, deps: SocketServerDeps) {
+export function createSocketServer(httpServer: HttpServer, deps: SocketServerDeps) {
   const { logger, corsOrigin } = deps;
   const io = new Server(httpServer, {
     cors: {
-      origin: corsOrigin,
+      origin: Array.isArray(corsOrigin) ? [...corsOrigin] : (corsOrigin as string),
       methods: ['GET', 'POST'],
       credentials: true,
     },
@@ -26,11 +25,17 @@ export async function createSocketServer(httpServer: Http2Server, deps: SocketSe
   io.use((socket, next) => {
     try {
       const token = socket.handshake.auth.token;
-      const payload = verifyAccessToken(token);
+      if (!token) {
+        logger.warn({ socketId: socket.id }, 'Socket connection rejected: No token provided');
+        next(new AppError(ErrorCode.UNAUTHORIZED, 401, 'Invalid or missing token'));
+        return;
+      }
 
+      const payload = verifyAccessToken(token);
       if (!payload) {
         logger.warn({ socketId: socket.id }, 'Socket connection rejected: Invalid token');
-        next(new AppError(ErrorCode.UNAUTHORIZED, 403, 'Invalid Token'));
+        next(new AppError(ErrorCode.UNAUTHORIZED, 401, 'Invalid Token'));
+        return;
       }
 
       socket.data.user = { id: payload.sub, role: payload.role };
@@ -41,7 +46,7 @@ export async function createSocketServer(httpServer: Http2Server, deps: SocketSe
       );
       next();
     } catch {
-      next(new AppError(ErrorCode.INTERNAL_SERVER_ERROR, 500, 'Internal Server Error'));
+      next(new AppError(ErrorCode.UNAUTHORIZED, 401, 'Authentication failed'));
     }
   });
 
