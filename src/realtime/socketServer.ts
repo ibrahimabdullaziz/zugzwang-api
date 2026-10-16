@@ -4,6 +4,8 @@ import { AppError } from '../common/errors/AppError.js';
 import { ErrorCode } from '../common/errors/codes.js';
 import { Http2Server } from 'node:http2';
 import { Logger } from 'pino';
+import { findById as findGameById } from '../modules/games/games.repository.js';
+import { GameSessionManager } from './GameSessionManager.js';
 
 interface SocketServerDeps {
   logger: Logger;
@@ -45,6 +47,40 @@ export async function createSocketServer(httpServer: Http2Server, deps: SocketSe
 
   io.on('connection', (socket: Socket) => {
     logger.info({ socketId: socket.id, userId: socket.data.user?.id }, 'Client connected');
+
+    socket.on('game:join', async (gameId: string) => {
+      try {
+        const game = await findGameById(gameId);
+
+        if (!game) {
+          socket.emit('error', { message: 'This game isn`t exists' });
+          return;
+        }
+
+        const gameSession = GameSessionManager.getInstance();
+        const session = await gameSession.getOrLoad(gameId);
+
+        if (!session) {
+          socket.emit('error', { message: 'Game not found or finished' });
+          return;
+        }
+
+        const userId = socket.data.user.id;
+        const isPlayer = userId === game.whiteId || userId === game.blackId;
+        const role = isPlayer ? 'player' : 'spectator';
+        const roomName = `game:${gameId}`;
+
+        await socket.join(roomName);
+
+        socket.emit('game:state', {
+          pgn: game.pgn,
+          role: role,
+        });
+      } catch (error) {
+        logger.error({ err: error }, 'Error handling game:join');
+        socket.emit('error', { message: 'Internal Server Error' });
+      }
+    });
 
     socket.on('disconnect', (reason) => {
       logger.info({ socketId: socket.id, reason }, 'Client disconnected');
