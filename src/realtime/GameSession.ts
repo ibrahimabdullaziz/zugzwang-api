@@ -1,9 +1,9 @@
-import { Game } from '@prisma/client';
+import { Game, GameResult, ResultReason } from '@prisma/client';
 import { AppError } from '../common/errors/AppError.js';
 import { ErrorCode } from '../common/errors/codes.js';
 import { ChessGame } from '../modules/chess/chessGame.js';
 import { isValidUci } from '../modules/chess/uci.js';
-import { appendMove } from '../modules/games/games.repository.js';
+import { appendMove, finish } from '../modules/games/games.repository.js';
 
 export interface GameSessionData {
   gameId: string;
@@ -63,6 +63,7 @@ export class GameSession {
         throw new AppError(ErrorCode.CONFLICT, 409, 'Game is not active');
       }
 
+      this.drawOffer.offeredBy = null;
       const currentPlayerId = this.gameInstance.turn === 'w' ? this.whiteId : this.blackId;
 
       if (currentPlayerId !== userId) {
@@ -95,10 +96,71 @@ export class GameSession {
       const outcome = this.gameInstance.getOutcome();
       if (outcome?.result) {
         this.game.status = 'FINISHED';
-        //store to DB
+        await finish(this.gameId, {
+          status: this.game.status,
+          result: outcome.result,
+          reason: outcome.reason,
+          finalFen: moveData.fen,
+          pgn: '',
+        });
       }
 
       return { ply, ...moveData, uci, outcome };
     });
+  }
+
+  async resign(userId: string) {
+    let outcome: { result: GameResult; reason: ResultReason };
+    if (userId === this.whiteId) {
+      outcome = {
+        result: 'BLACK_WIN',
+        reason: 'RESIGNATION',
+      };
+    } else if (userId === this.blackId) {
+      outcome = {
+        result: 'WHITE_WIN',
+        reason: 'RESIGNATION',
+      };
+    } else {
+      throw new AppError(ErrorCode.FORBIDDEN, 401, 'You don`t have access to do this');
+    }
+
+    await finish(this.gameId, {
+      status: 'FINISHED',
+      result: outcome.result,
+      reason: outcome.reason,
+      finalFen: '',
+      pgn: '',
+    });
+    return outcome;
+  }
+
+  async handleDrawOffer(userId: string) {
+    if (userId !== this.blackId && userId !== this.whiteId) {
+      throw new AppError(ErrorCode.FORBIDDEN, 401, 'You don`t have access to do this');
+    }
+    this.drawOffer.offeredBy = userId;
+  }
+
+  async handleDrawAccept(userId: string) {
+    if (this.drawOffer.offeredBy === null || this.drawOffer.offeredBy === userId) {
+      throw new AppError(ErrorCode.FORBIDDEN, 401, 'You don`t have access to do this');
+    }
+
+    return await finish(this.gameId, {
+      status: 'FINISHED',
+      result: 'DRAW',
+      reason: 'DRAW_AGREEMENT',
+      finalFen: '',
+      pgn: '',
+    });
+  }
+
+  async handleDrawDecline(userId: string) {
+    if (this.drawOffer.offeredBy === null || this.drawOffer.offeredBy === userId) {
+      throw new AppError(ErrorCode.FORBIDDEN, 401, 'You don`t have access to do this');
+    }
+
+    this.drawOffer.offeredBy = null;
   }
 }
