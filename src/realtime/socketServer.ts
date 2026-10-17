@@ -56,14 +56,15 @@ export function createSocketServer(httpServer: HttpServer, deps: SocketServerDep
   io.on('connection', (socket: Socket) => {
     logger.info({ socketId: socket.id, userId: socket.data.user?.id }, 'Client connected');
 
-    socket.on('game:join', safeHandler(async (socket, gameId: string) => {
-        const validation = gameJoinSchema.safeParse(gameId);
+    socket.on('game:join', safeHandler(async (socket, data: { gameId: string }) => {
+        const validation = gameJoinSchema.safeParse(data);
         if (!validation.success) {
           socket.emit('error', {
             message: validation.error.issues[0]?.message ?? 'Invalid game ID',
           });
           return;
         }
+        const { gameId } = validation.data;
         const game = await findGameById(gameId);
 
         if (!game) {
