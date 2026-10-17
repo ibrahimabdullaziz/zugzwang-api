@@ -8,6 +8,7 @@ import { Logger } from 'pino';
 import { findById as findGameById } from '../modules/games/games.repository.js';
 import { GameSessionManager } from './GameSessionManager.js';
 import { gameJoinSchema } from './schemas.js';
+import { safeHandler } from './safeHandler.js';
 
 interface SocketServerDeps {
   logger: Logger;
@@ -55,8 +56,7 @@ export function createSocketServer(httpServer: HttpServer, deps: SocketServerDep
   io.on('connection', (socket: Socket) => {
     logger.info({ socketId: socket.id, userId: socket.data.user?.id }, 'Client connected');
 
-    socket.on('game:join', async (gameId: string) => {
-      try {
+    socket.on('game:join', safeHandler(async (socket, gameId: string) => {
         const validation = gameJoinSchema.safeParse(gameId);
         if (!validation.success) {
           socket.emit('error', {
@@ -105,14 +105,13 @@ export function createSocketServer(httpServer: HttpServer, deps: SocketServerDep
           pgn: game.pgn,
           role: role,
         });
-      } catch (error) {
-        logger.error({ err: error }, 'Error handling game:join');
-        socket.emit('error', { message: 'Internal Server Error' });
-      }
-    });
+    }, logger));
 
-    socket.on('game:move', async (data, ack) => {
-      try {
+    socket.on('game:move', safeHandler(async (
+      socket,
+      data: { gameId: string; uci: string },
+      ack: (response: { ok: boolean; error?: string }) => void,
+    ) => {
         const validation = gameMoveSchema.safeParse(data);
         if (!validation.success) {
           return ack({ ok: false, error: validation.error.issues[0]?.message ?? 'Invalid move' });
@@ -141,14 +140,13 @@ export function createSocketServer(httpServer: HttpServer, deps: SocketServerDep
             reason: move.outcome.reason || 'CHECKMATE',
           });
         }
-      } catch (error) {
-        logger.error({ err: error }, 'Error handling game:join');
-        socket.emit('error', { message: 'Internal Server Error' });
-      }
-    });
+    }, logger));
 
-    socket.on('game:resign', async (gameId: string, ack) => {
-      try {
+    socket.on('game:resign', safeHandler(async (
+      socket,
+      gameId: string,
+      ack: (response: { ok: boolean; error?: string }) => void,
+    ) => {
         const validation = gameActionSchema.safeParse({ gameId });
         if (!validation.success) {
           return ack({
@@ -172,14 +170,13 @@ export function createSocketServer(httpServer: HttpServer, deps: SocketServerDep
         });
 
         ack({ ok: true });
-      } catch (error) {
-        logger.error({ err: error }, 'Error handling game:resign');
-        socket.emit('error', { message: 'Internal Server Error' });
-      }
-    });
+    }, logger));
 
-    socket.on('game:draw:offer', async (gameId: string, ack) => {
-      try {
+    socket.on('game:draw:offer', safeHandler(async (
+      socket,
+      gameId: string,
+      ack: (response: { ok: boolean; error?: string }) => void,
+    ) => {
         const validation = gameActionSchema.safeParse({ gameId });
         if (!validation.success) {
           return ack({
@@ -202,14 +199,13 @@ export function createSocketServer(httpServer: HttpServer, deps: SocketServerDep
         });
 
         ack({ ok: true });
-      } catch (error) {
-        logger.error({ err: error }, 'Error handling game:resign');
-        socket.emit('error', { message: 'Internal Server Error' });
-      }
-    });
+    }, logger));
 
-    socket.on('game:draw:accept', async (gameId: string, ack) => {
-      try {
+    socket.on('game:draw:accept', safeHandler(async (
+      socket,
+      gameId: string,
+      ack: (response: { ok: boolean; error?: string }) => void,
+    ) => {
         const validation = gameActionSchema.safeParse({ gameId });
         if (!validation.success) {
           return ack({
@@ -233,14 +229,13 @@ export function createSocketServer(httpServer: HttpServer, deps: SocketServerDep
         });
 
         ack({ ok: true });
-      } catch (error) {
-        logger.error({ err: error }, 'Error handling game:resign');
-        socket.emit('error', { message: 'Internal Server Error' });
-      }
-    });
+    }, logger));
 
-    socket.on('game:draw:decline', async (gameId: string, ack) => {
-      try {
+    socket.on('game:draw:decline', safeHandler(async (
+      socket,
+      gameId: string,
+      ack: (response: { ok: boolean; error?: string }) => void,
+    ) => {
         const validation = gameActionSchema.safeParse({ gameId });
         if (!validation.success) {
           return ack({
@@ -263,24 +258,20 @@ export function createSocketServer(httpServer: HttpServer, deps: SocketServerDep
         });
 
         ack({ ok: true });
-      } catch (error) {
-        logger.error({ err: error }, 'Error handling game:resign');
-        socket.emit('error', { message: 'Internal Server Error' });
-      }
-    });
+    }, logger));
 
-    socket.on('disconnect', (reason) => {
+    socket.on('disconnect', safeHandler(async (socket, reason: string) => {
       logger.info({ socketId: socket.id, reason }, 'Client disconnected');
 
       const sessionManager = GameSessionManager.getInstance();
 
       for (const session of sessionManager.getAllSessions?.() || []) {
         if (session.whiteSocketId === socket.id || session.blackSocketId === socket.id) {
-          session.handleDisconnect(socket.id, io);
+          await session.handleDisconnect(socket.id, io);
           break;
         }
       }
-    });
+    }, logger));
   });
 
   return io;
