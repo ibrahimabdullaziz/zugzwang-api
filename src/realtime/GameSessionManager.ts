@@ -47,4 +47,7 @@ export class GameSessionManager {
   public getSession(gameId: string): GameSession | undefined {
     return this.sessions.get(gameId);
   }
+  public getAllSessions(): GameSession[] {
+    return Array.from(this.sessions.values());
+  }
 }

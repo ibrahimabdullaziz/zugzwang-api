@@ -84,6 +84,21 @@ export function createSocketServer(httpServer: HttpServer, deps: SocketServerDep
         const role = isPlayer ? 'player' : 'spectator';
         const roomName = `game:${gameId}`;
 
+        if (isPlayer) {
+          const oldSocketId =
+            userId === session.whiteId ? session.whiteSocketId : session.blackSocketId;
+
+          if (oldSocketId && oldSocketId !== socket.id) {
+            const oldSocket = io.sockets.sockets.get(oldSocketId);
+            oldSocket?.disconnect();
+          }
+        }
+
+        if (userId === session.whiteId) session.whiteSocketId = socket.id;
+        if (userId === session.blackId) session.blackSocketId = socket.id;
+
+        await session.handleReconnect(userId, socket.id, io);
+
         await socket.join(roomName);
 
         socket.emit('game:state', {
@@ -256,6 +271,15 @@ export function createSocketServer(httpServer: HttpServer, deps: SocketServerDep
 
     socket.on('disconnect', (reason) => {
       logger.info({ socketId: socket.id, reason }, 'Client disconnected');
+
+      const sessionManager = GameSessionManager.getInstance();
+
+      for (const session of sessionManager.getAllSessions?.() || []) {
+        if (session.whiteSocketId === socket.id || session.blackSocketId === socket.id) {
+          session.handleDisconnect(socket.id, io);
+          break;
+        }
+      }
     });
   });
 

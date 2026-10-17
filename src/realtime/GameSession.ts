@@ -1,4 +1,5 @@
 import { Game, GameResult, ResultReason } from '@prisma/client';
+import type { Server } from 'socket.io';
 import { AppError } from '../common/errors/AppError.js';
 import { ErrorCode } from '../common/errors/codes.js';
 import { ChessGame } from '../modules/chess/chessGame.js';
@@ -162,5 +163,50 @@ export class GameSession {
     }
 
     this.drawOffer.offeredBy = null;
+  }
+
+  async handleDisconnect(socketId: string, io: Server) {
+    const isWhite = socketId === this.whiteSocketId;
+    const isBlack = socketId === this.blackSocketId;
+
+    if (!isWhite && !isBlack) return;
+
+    if (this.disconnectedTimer) {
+      clearTimeout(this.disconnectedTimer);
+    }
+
+    io.to(`game:${this.gameId}`).emit('game:opponent:disconnected', { graceSeconds: 30 });
+
+    // 👈 هنا الحفظ والتعديل للـ 30 ثانية والشرط
+    this.disconnectedTimer = setTimeout(async () => {
+      if (this.game.status !== 'ACTIVE') return;
+
+      this.game.status = 'FINISHED';
+      const result = isWhite ? 'BLACK_WIN' : 'WHITE_WIN';
+
+      await finish(this.gameId, {
+        status: 'FINISHED',
+        result: result,
+        reason: 'ABANDONED',
+        finalFen: this.gameInstance.fen,
+        pgn: '',
+      });
+
+      io.to(`game:${this.gameId}`).emit('game:over', {
+        result: result,
+        reason: 'ABANDONED',
+      });
+    }, 30_000);
+  }
+
+  async handleReconnect(userId: string, socketId: string, io: Server) {
+    if (this.disconnectedTimer) {
+      clearTimeout(this.disconnectedTimer);
+      this.disconnectedTimer = undefined;
+      io.to(`game:${this.gameId}`).emit('game:opponent:reconnected');
+    }
+
+    if (userId === this.whiteId) this.whiteSocketId = socketId;
+    if (userId === this.blackId) this.blackSocketId = socketId;
   }
 }
