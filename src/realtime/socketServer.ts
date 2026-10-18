@@ -1,4 +1,5 @@
 import { MatchMaking } from './../modules/matchmaking/matchmaking.service.js';
+import { InMemoryMatchmaker } from '../modules/matchmaking/InMemoryMatchmaker.js';
 import { gameActionSchema, gameMoveSchema, queueJoinSchema } from './schemas.js';
 import { Server, Socket } from 'socket.io';
 import { verifyAccessToken } from '../common/security/tokens.js';
@@ -25,6 +26,8 @@ export function createSocketServer(httpServer: HttpServer, deps: SocketServerDep
       credentials: true,
     },
   });
+  const matchmaking = new MatchMaking(new InMemoryMatchmaker(), io);
+  matchmaking.start();
 
   io.use((socket, next) => {
     try {
@@ -299,25 +302,12 @@ export function createSocketServer(httpServer: HttpServer, deps: SocketServerDep
       'queue:join',
       safeHandler(
         async (
-          _socket: Socket,
-          _baseSeconds: number,
-          _incrementSecs: number,
+          socket: Socket,
+          data: unknown,
           ack?: (res: { ok: boolean; error?: string }) => void,
         ) => {
-          const validated = queueJoinSchema.parse({
-            baseSeconds: _baseSeconds,
-            incrementSecs: _incrementSecs,
-          });
-
-          await (
-            MatchMaking as typeof MatchMaking & {
-              joinQueue: (
-                userId: string,
-                socketId: string,
-                options: typeof validated,
-              ) => Promise<void>;
-            }
-          ).joinQueue(socket.data.user.id, socket.id, validated);
+          const validated = queueJoinSchema.parse(data);
+          await matchmaking.joinQueue(socket.data.user.id, socket.id, validated);
 
           if (ack) ack({ ok: true });
         },
@@ -329,15 +319,10 @@ export function createSocketServer(httpServer: HttpServer, deps: SocketServerDep
       'queue:leave',
       safeHandler(
         async (
-          _socket: Socket,
-
+          socket: Socket,
           ack?: (res: { ok: boolean; error?: string }) => void,
         ) => {
-          await (
-            MatchMaking as typeof MatchMaking & {
-              leaveQueue?: (userId: string) => Promise<void>;
-            }
-          ).leaveQueue?.(socket.data.user.id);
+          matchmaking.leaveQueue(socket.data.user.id);
 
           if (ack) ack({ ok: true });
         },
@@ -360,11 +345,7 @@ export function createSocketServer(httpServer: HttpServer, deps: SocketServerDep
         }
 
         if (socket.data?.user?.id) {
-          await (
-            MatchMaking as typeof MatchMaking & {
-              leaveQueue?: (userId: string) => Promise<void>;
-            }
-          ).leaveQueue?.(socket.data.user.id);
+          matchmaking.leaveQueue(socket.data.user.id);
         }
       }, logger),
     );

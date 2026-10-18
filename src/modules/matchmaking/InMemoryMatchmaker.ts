@@ -1,67 +1,103 @@
 import { RatingCategory } from '@prisma/client';
-import { Pair, QueueEntry } from './matchmaker.js';
+import type { MatchMaker, Pair, QueueEntry } from './matchmaker.js';
 
-const queues = new Map<RatingCategory, QueueEntry[]>();
-const userToCategoryMap = new Map<string, RatingCategory>();
+export class InMemoryMatchmaker implements MatchMaker {
+  private readonly queues = new Map<RatingCategory, QueueEntry[]>([
+    ['BULLET', []],
+    ['BLITZ', []],
+    ['RAPID', []],
+  ]);
 
-queues.set('BULLET', []);
-queues.set('BLITZ', []);
-queues.set('RAPID', []);
+  private readonly userToCategoryMap = new Map<string, RatingCategory>();
 
-export function tick(): Pair[] {
-  const allMatchedPairs: Pair[] = [];
-  const now = Date.now();
+  enqueue(entry: QueueEntry): void {
+    const queue = this.queues.get(entry.category) ?? [];
+    queue.push(entry);
+    this.queues.set(entry.category, queue);
+    this.userToCategoryMap.set(entry.userId, entry.category);
+  }
 
-  for (const [category, queue] of queues.entries()) {
-    if (queue.length < 2) continue;
+  dequeue(userId: string): boolean {
+    const category = this.userToCategoryMap.get(userId);
+    if (!category) return false;
 
-    const matchedUserIds = new Set<string>();
-    const categoryPairs: Pair[] = [];
+    const queue = this.queues.get(category);
+    if (queue) {
+      this.queues.set(
+        category,
+        queue.filter((entry) => entry.userId !== userId),
+      );
+    }
+    this.userToCategoryMap.delete(userId);
+    return true;
+  }
 
-    for (let i = 0; i < queue.length; i++) {
-      const p1 = queue[i];
-      if (!p1 || matchedUserIds.has(p1.userId)) continue;
+  tick(): Pair[] {
+    const allMatchedPairs: Pair[] = [];
+    const now = Date.now();
 
-      for (let j = i + 1; j < queue.length; j++) {
-        const p2 = queue[j];
-        if (!p2 || matchedUserIds.has(p2.userId)) continue;
+    for (const [category, queue] of this.queues.entries()) {
+      if (queue.length < 2) continue;
 
-        const isSameTimeControl =
-          p1.timeControl.baseSeconds === p2.timeControl.baseSeconds &&
-          p1.timeControl.incrementSecs === p2.timeControl.incrementSecs;
+      const matchedUserIds = new Set<string>();
+      const categoryPairs: Pair[] = [];
 
-        if (p1.userId !== p2.userId && isSameTimeControl) {
-          const waitTime1 = now - p1.joinedAt;
-          const waitTime2 = now - p2.joinedAt;
+      for (let i = 0; i < queue.length; i++) {
+        const p1 = queue[i];
+        if (!p1 || matchedUserIds.has(p1.userId)) continue;
 
-          const allowedDiff1 = 100 + Math.floor(waitTime1 / 5000) * 50;
-          const allowedDiff2 = 100 + Math.floor(waitTime2 / 5000) * 50;
+        for (let j = i + 1; j < queue.length; j++) {
+          const p2 = queue[j];
+          if (!p2 || matchedUserIds.has(p2.userId)) continue;
 
-          const ratingDiff = Math.abs(p1.rating - p2.rating);
-          const maxAllowed = Math.min(allowedDiff1, allowedDiff2);
+          const isSameTimeControl =
+            p1.timeControl.baseSeconds === p2.timeControl.baseSeconds &&
+            p1.timeControl.incrementSecs === p2.timeControl.incrementSecs;
 
-          if (ratingDiff <= maxAllowed) {
-            categoryPairs.push({ player1: p1, player2: p2 });
+          if (p1.userId !== p2.userId && isSameTimeControl) {
+            const waitTime1 = now - p1.joinedAt;
+            const waitTime2 = now - p2.joinedAt;
 
-            matchedUserIds.add(p1.userId);
-            matchedUserIds.add(p2.userId);
+            const allowedDiff1 = 100 + Math.floor(waitTime1 / 5000) * 50;
+            const allowedDiff2 = 100 + Math.floor(waitTime2 / 5000) * 50;
 
-            userToCategoryMap.delete(p1.userId);
-            userToCategoryMap.delete(p2.userId);
+            const ratingDiff = Math.abs(p1.rating - p2.rating);
+            const maxAllowed = Math.min(allowedDiff1, allowedDiff2);
 
-            break;
+            if (ratingDiff <= maxAllowed) {
+              categoryPairs.push({ player1: p1, player2: p2 });
+
+              matchedUserIds.add(p1.userId);
+              matchedUserIds.add(p2.userId);
+
+              this.userToCategoryMap.delete(p1.userId);
+              this.userToCategoryMap.delete(p2.userId);
+
+              break;
+            }
           }
         }
       }
+
+      if (matchedUserIds.size > 0) {
+        this.queues.set(
+          category,
+          queue.filter((entry) => !matchedUserIds.has(entry.userId)),
+        );
+      }
+
+      allMatchedPairs.push(...categoryPairs);
     }
 
-    if (matchedUserIds.size > 0) {
-      const updatedQueue = queue.filter((p) => !matchedUserIds.has(p.userId));
-      queues.set(category, updatedQueue);
-    }
-
-    allMatchedPairs.push(...categoryPairs);
+    return allMatchedPairs;
   }
 
-  return allMatchedPairs;
+  isQueued(userId: string): boolean {
+    return this.userToCategoryMap.has(userId);
+  }
+
+  size(category?: RatingCategory): number {
+    if (category) return this.queues.get(category)?.length ?? 0;
+    return [...this.queues.values()].reduce((total, queue) => total + queue.length, 0);
+  }
 }
