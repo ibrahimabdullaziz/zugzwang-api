@@ -16,7 +16,7 @@ import { buildPgn } from '../chess/pgn.js';
 import { nanoid } from 'nanoid';
 import { INVITE_CODE_LENGTH } from './games.schema.js';
 
-function determineRatingCategory(timeControl: TimeControl): RatingCategory {
+export function determineRatingCategory(timeControl: TimeControl): RatingCategory {
   const estimatedSeconds: number = timeControl.baseSeconds + 40 * timeControl.incrementSecs;
 
   if (estimatedSeconds <= 180) {
