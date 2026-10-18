@@ -19,6 +19,12 @@ export const gameActionSchema = z.object({
   gameId: gameIdSchema,
 });
 
+export const queueJoinSchema = z.object({
+  baseSeconds: z.number().int().positive(),
+  incrementSecs: z.number().int().nonnegative(),
+});
+
 export type GameJoinPayload = z.infer<typeof gameJoinSchema>;
 export type GameMovePayload = z.infer<typeof gameMoveSchema>;
 export type GameActionPayload = z.infer<typeof gameActionSchema>;
+export type queueJoinPayload = z.infer<typeof queueJoinSchema>;

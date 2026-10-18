@@ -1,4 +1,5 @@
-import { gameActionSchema, gameMoveSchema } from './schemas.js';
+import { MatchMaking } from './../modules/matchmaking/matchmaking.service.js';
+import { gameActionSchema, gameMoveSchema, queueJoinSchema } from './schemas.js';
 import { Server, Socket } from 'socket.io';
 import { verifyAccessToken } from '../common/security/tokens.js';
 import { AppError } from '../common/errors/AppError.js';
@@ -56,7 +57,9 @@ export function createSocketServer(httpServer: HttpServer, deps: SocketServerDep
   io.on('connection', (socket: Socket) => {
     logger.info({ socketId: socket.id, userId: socket.data.user?.id }, 'Client connected');
 
-    socket.on('game:join', safeHandler(async (socket, data: { gameId: string }) => {
+    socket.on(
+      'game:join',
+      safeHandler(async (socket, data: { gameId: string }) => {
         const validation = gameJoinSchema.safeParse(data);
         if (!validation.success) {
           socket.emit('error', {
@@ -106,173 +109,265 @@ export function createSocketServer(httpServer: HttpServer, deps: SocketServerDep
           pgn: game.pgn,
           role: role,
         });
-    }, logger));
+      }, logger),
+    );
 
-    socket.on('game:move', safeHandler(async (
-      socket,
-      data: { gameId: string; uci: string },
-      ack: (response: { ok: boolean; error?: string }) => void,
-    ) => {
-        const validation = gameMoveSchema.safeParse(data);
-        if (!validation.success) {
-          return ack({ ok: false, error: validation.error.issues[0]?.message ?? 'Invalid move' });
-        }
+    socket.on(
+      'game:move',
+      safeHandler(
+        async (
+          socket,
+          data: { gameId: string; uci: string },
+          ack: (response: { ok: boolean; error?: string }) => void,
+        ) => {
+          const validation = gameMoveSchema.safeParse(data);
+          if (!validation.success) {
+            return ack({ ok: false, error: validation.error.issues[0]?.message ?? 'Invalid move' });
+          }
+          const sessionManager = GameSessionManager.getInstance();
+
+          const session = await sessionManager.getOrLoad(data.gameId);
+          if (!session) {
+            return ack({ ok: false, error: 'Game session not found' });
+          }
+
+          const move = await session.handleMove(socket.data.user.id, data.uci);
+
+          io.to(`game:${data.gameId}`).emit('game:move', {
+            ply: move.ply,
+            san: move.san,
+            uci: move.uci,
+            fen: move.fen,
+          });
+
+          ack({ ok: true });
+
+          if (move.outcome?.result) {
+            io.to(`game:${data.gameId}`).emit(`game:over`, {
+              result: move.outcome.result,
+              reason: move.outcome.reason || 'CHECKMATE',
+            });
+          }
+        },
+        logger,
+      ),
+    );
+
+    socket.on(
+      'game:resign',
+      safeHandler(
+        async (
+          socket,
+          gameId: string,
+          ack: (response: { ok: boolean; error?: string }) => void,
+        ) => {
+          const validation = gameActionSchema.safeParse({ gameId });
+          if (!validation.success) {
+            return ack({
+              ok: false,
+              error: validation.error.issues[0]?.message ?? 'Invalid game ID',
+            });
+          }
+          const { gameId: validatedGameId } = validation.data;
+          const sessionManager = GameSessionManager.getInstance();
+
+          const session = await sessionManager.getOrLoad(validatedGameId);
+          if (!session) {
+            return ack({ ok: false, error: 'Game session not found' });
+          }
+
+          const outcome = await session.resign(socket.data.user.id);
+
+          io.to(`game:${validatedGameId}`).emit('game:over', {
+            result: outcome.result,
+            reason: outcome.reason,
+          });
+
+          ack({ ok: true });
+        },
+        logger,
+      ),
+    );
+
+    socket.on(
+      'game:draw:offer',
+      safeHandler(
+        async (
+          socket,
+          gameId: string,
+          ack: (response: { ok: boolean; error?: string }) => void,
+        ) => {
+          const validation = gameActionSchema.safeParse({ gameId });
+          if (!validation.success) {
+            return ack({
+              ok: false,
+              error: validation.error.issues[0]?.message ?? 'Invalid game ID',
+            });
+          }
+          const { gameId: validatedGameId } = validation.data;
+          const sessionManager = GameSessionManager.getInstance();
+
+          const session = await sessionManager.getOrLoad(validatedGameId);
+          if (!session) {
+            return ack({ ok: false, error: 'Game session not found' });
+          }
+
+          await session.handleDrawOffer(socket.data.user.id);
+
+          io.to(`game:${validatedGameId}`).emit('game:draw:offered', {
+            offeredBy: socket.data.user.id,
+          });
+
+          ack({ ok: true });
+        },
+        logger,
+      ),
+    );
+
+    socket.on(
+      'game:draw:accept',
+      safeHandler(
+        async (
+          socket,
+          gameId: string,
+          ack: (response: { ok: boolean; error?: string }) => void,
+        ) => {
+          const validation = gameActionSchema.safeParse({ gameId });
+          if (!validation.success) {
+            return ack({
+              ok: false,
+              error: validation.error.issues[0]?.message ?? 'Invalid game ID',
+            });
+          }
+          const { gameId: validatedGameId } = validation.data;
+          const sessionManager = GameSessionManager.getInstance();
+
+          const session = await sessionManager.getOrLoad(validatedGameId);
+          if (!session) {
+            return ack({ ok: false, error: 'Game session not found' });
+          }
+
+          const outcome = await session.handleDrawAccept(socket.data.user.id);
+
+          io.to(`game:${validatedGameId}`).emit('game:over', {
+            result: outcome?.result,
+            reason: outcome?.reason,
+          });
+
+          ack({ ok: true });
+        },
+        logger,
+      ),
+    );
+
+    socket.on(
+      'game:draw:decline',
+      safeHandler(
+        async (
+          socket,
+          gameId: string,
+          ack: (response: { ok: boolean; error?: string }) => void,
+        ) => {
+          const validation = gameActionSchema.safeParse({ gameId });
+          if (!validation.success) {
+            return ack({
+              ok: false,
+              error: validation.error.issues[0]?.message ?? 'Invalid game ID',
+            });
+          }
+          const { gameId: validatedGameId } = validation.data;
+          const sessionManager = GameSessionManager.getInstance();
+
+          const session = await sessionManager.getOrLoad(validatedGameId);
+          if (!session) {
+            return ack({ ok: false, error: 'Game session not found' });
+          }
+
+          await session.handleDrawDecline(socket.data.user.id);
+
+          io.to(`game:${validatedGameId}`).emit('game:draw:declined', {
+            offeredBy: socket.data.user.id,
+          });
+
+          ack({ ok: true });
+        },
+        logger,
+      ),
+    );
+
+    socket.on(
+      'queue:join',
+      safeHandler(
+        async (
+          _socket: Socket,
+          _baseSeconds: number,
+          _incrementSecs: number,
+          ack?: (res: { ok: boolean; error?: string }) => void,
+        ) => {
+          const validated = queueJoinSchema.parse({
+            baseSeconds: _baseSeconds,
+            incrementSecs: _incrementSecs,
+          });
+
+          await (
+            MatchMaking as typeof MatchMaking & {
+              joinQueue: (
+                userId: string,
+                socketId: string,
+                options: typeof validated,
+              ) => Promise<void>;
+            }
+          ).joinQueue(socket.data.user.id, socket.id, validated);
+
+          if (ack) ack({ ok: true });
+        },
+        logger,
+      ),
+    );
+
+    socket.on(
+      'queue:leave',
+      safeHandler(
+        async (
+          _socket: Socket,
+
+          ack?: (res: { ok: boolean; error?: string }) => void,
+        ) => {
+          await (
+            MatchMaking as typeof MatchMaking & {
+              leaveQueue?: (userId: string) => Promise<void>;
+            }
+          ).leaveQueue?.(socket.data.user.id);
+
+          if (ack) ack({ ok: true });
+        },
+        logger,
+      ),
+    );
+
+    socket.on(
+      'disconnect',
+      safeHandler(async (socket, reason: string) => {
+        logger.info({ socketId: socket.id, reason }, 'Client disconnected');
+
         const sessionManager = GameSessionManager.getInstance();
 
-        const session = await sessionManager.getOrLoad(data.gameId);
-        if (!session) {
-          return ack({ ok: false, error: 'Game session not found' });
+        for (const session of sessionManager.getAllSessions?.() || []) {
+          if (session.whiteSocketId === socket.id || session.blackSocketId === socket.id) {
+            await session.handleDisconnect(socket.id, io);
+            break;
+          }
         }
 
-        const move = await session.handleMove(socket.data.user.id, data.uci);
-
-        io.to(`game:${data.gameId}`).emit('game:move', {
-          ply: move.ply,
-          san: move.san,
-          uci: move.uci,
-          fen: move.fen,
-        });
-
-        ack({ ok: true });
-
-        if (move.outcome?.result) {
-          io.to(`game:${data.gameId}`).emit(`game:over`, {
-            result: move.outcome.result,
-            reason: move.outcome.reason || 'CHECKMATE',
-          });
+        if (socket.data?.user?.id) {
+          await (
+            MatchMaking as typeof MatchMaking & {
+              leaveQueue?: (userId: string) => Promise<void>;
+            }
+          ).leaveQueue?.(socket.data.user.id);
         }
-    }, logger));
-
-    socket.on('game:resign', safeHandler(async (
-      socket,
-      gameId: string,
-      ack: (response: { ok: boolean; error?: string }) => void,
-    ) => {
-        const validation = gameActionSchema.safeParse({ gameId });
-        if (!validation.success) {
-          return ack({
-            ok: false,
-            error: validation.error.issues[0]?.message ?? 'Invalid game ID',
-          });
-        }
-        const { gameId: validatedGameId } = validation.data;
-        const sessionManager = GameSessionManager.getInstance();
-
-        const session = await sessionManager.getOrLoad(validatedGameId);
-        if (!session) {
-          return ack({ ok: false, error: 'Game session not found' });
-        }
-
-        const outcome = await session.resign(socket.data.user.id);
-
-        io.to(`game:${validatedGameId}`).emit('game:over', {
-          result: outcome.result,
-          reason: outcome.reason,
-        });
-
-        ack({ ok: true });
-    }, logger));
-
-    socket.on('game:draw:offer', safeHandler(async (
-      socket,
-      gameId: string,
-      ack: (response: { ok: boolean; error?: string }) => void,
-    ) => {
-        const validation = gameActionSchema.safeParse({ gameId });
-        if (!validation.success) {
-          return ack({
-            ok: false,
-            error: validation.error.issues[0]?.message ?? 'Invalid game ID',
-          });
-        }
-        const { gameId: validatedGameId } = validation.data;
-        const sessionManager = GameSessionManager.getInstance();
-
-        const session = await sessionManager.getOrLoad(validatedGameId);
-        if (!session) {
-          return ack({ ok: false, error: 'Game session not found' });
-        }
-
-        await session.handleDrawOffer(socket.data.user.id);
-
-        io.to(`game:${validatedGameId}`).emit('game:draw:offered', {
-          offeredBy: socket.data.user.id,
-        });
-
-        ack({ ok: true });
-    }, logger));
-
-    socket.on('game:draw:accept', safeHandler(async (
-      socket,
-      gameId: string,
-      ack: (response: { ok: boolean; error?: string }) => void,
-    ) => {
-        const validation = gameActionSchema.safeParse({ gameId });
-        if (!validation.success) {
-          return ack({
-            ok: false,
-            error: validation.error.issues[0]?.message ?? 'Invalid game ID',
-          });
-        }
-        const { gameId: validatedGameId } = validation.data;
-        const sessionManager = GameSessionManager.getInstance();
-
-        const session = await sessionManager.getOrLoad(validatedGameId);
-        if (!session) {
-          return ack({ ok: false, error: 'Game session not found' });
-        }
-
-        const outcome = await session.handleDrawAccept(socket.data.user.id);
-
-        io.to(`game:${validatedGameId}`).emit('game:over', {
-          result: outcome?.result,
-          reason: outcome?.reason,
-        });
-
-        ack({ ok: true });
-    }, logger));
-
-    socket.on('game:draw:decline', safeHandler(async (
-      socket,
-      gameId: string,
-      ack: (response: { ok: boolean; error?: string }) => void,
-    ) => {
-        const validation = gameActionSchema.safeParse({ gameId });
-        if (!validation.success) {
-          return ack({
-            ok: false,
-            error: validation.error.issues[0]?.message ?? 'Invalid game ID',
-          });
-        }
-        const { gameId: validatedGameId } = validation.data;
-        const sessionManager = GameSessionManager.getInstance();
-
-        const session = await sessionManager.getOrLoad(validatedGameId);
-        if (!session) {
-          return ack({ ok: false, error: 'Game session not found' });
-        }
-
-        await session.handleDrawDecline(socket.data.user.id);
-
-        io.to(`game:${validatedGameId}`).emit('game:draw:declined', {
-          offeredBy: socket.data.user.id,
-        });
-
-        ack({ ok: true });
-    }, logger));
-
-    socket.on('disconnect', safeHandler(async (socket, reason: string) => {
-      logger.info({ socketId: socket.id, reason }, 'Client disconnected');
-
-      const sessionManager = GameSessionManager.getInstance();
-
-      for (const session of sessionManager.getAllSessions?.() || []) {
-        if (session.whiteSocketId === socket.id || session.blackSocketId === socket.id) {
-          await session.handleDisconnect(socket.id, io);
-          break;
-        }
-      }
-    }, logger));
+      }, logger),
+    );
   });
 
   return io;

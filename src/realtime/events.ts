@@ -10,6 +10,11 @@ interface ClientToServerEvents {
   'game:draw:offer': (data: { gameId: string }, ack: (res: ackResponse) => void) => void;
   'game:draw:accept': (data: { gameId: string }, ack: (res: ackResponse) => void) => void;
   'game:draw:decline': (data: { gameId: string }, ack: (res: ackResponse) => void) => void;
+  'queue:join': (
+    data: { baseSeconds: number; incrementSecs: number },
+    ack?: (res: ackResponse) => void,
+  ) => void;
+  'queue:leave': (ack?: (res: ackResponse) => void) => void;
 }
 
 interface ServerToClientEvents {
@@ -21,6 +26,7 @@ interface ServerToClientEvents {
   'game:draw:offered': () => void;
   'game:draw:declined': () => void;
   'game:error': (error: { code: string; message: string }) => void;
+  'queue:matched': (data: { gameId: string }) => void;
 }
 
 interface InterServerEvents {

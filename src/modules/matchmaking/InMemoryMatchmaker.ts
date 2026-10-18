@@ -7,6 +7,7 @@ const userToCategoryMap = new Map<string, RatingCategory>();
 queues.set('BULLET', []);
 queues.set('BLITZ', []);
 queues.set('RAPID', []);
+
 export function tick(): Pair[] {
   const allMatchedPairs: Pair[] = [];
   const now = Date.now();
