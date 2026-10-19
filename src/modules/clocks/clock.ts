@@ -33,6 +33,10 @@ export class Clock {
     return Math.max(0, remaining - (now - this.lastMoveTimestamp));
   }
 
+  getStoredRemainingTime(color: 'w' | 'b'): number {
+    return color === 'w' ? this.whiteRemainingMs : this.blackRemainingMs;
+  }
+
   completeMove(now: number): boolean {
     if (this.lastMoveTimestamp === null) {
       throw new AppError(ErrorCode.CONFLICT, 409, 'Clock has not started');
@@ -64,5 +68,19 @@ export class Clock {
 
     this.lastMoveTimestamp = now;
     return false;
+  }
+
+  getSnapshot(now: number): {
+    whiteRemainingMs: number;
+    blackRemainingMs: number;
+    activeColor: 'w' | 'b';
+    serverTimestamp: number;
+  } {
+    return {
+      whiteRemainingMs: this.getRemainingTime('w', now),
+      blackRemainingMs: this.getRemainingTime('b', now),
+      activeColor: this.activeColor,
+      serverTimestamp: now,
+    };
   }
 }

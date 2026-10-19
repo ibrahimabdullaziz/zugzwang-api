@@ -31,7 +31,7 @@ export class GameSessionManager {
       category: game.category,
       timeControl: {
         baseSeconds: game.baseSeconds,
-        incrementSecs: game.incrementSecs,
+        incrementSeconds: game.incrementSecs,
       },
       game,
       initialMoves,

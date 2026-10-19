@@ -108,6 +108,7 @@ export function createSocketServer(httpServer: HttpServer, deps: SocketServerDep
 
         await socket.join(roomName);
 
+        socket.emit('clock:update', session.clock.getSnapshot(performance.now()));
         socket.emit('game:state', {
           pgn: game.pgn,
           role: role,
@@ -317,17 +318,11 @@ export function createSocketServer(httpServer: HttpServer, deps: SocketServerDep
 
     socket.on(
       'queue:leave',
-      safeHandler(
-        async (
-          socket: Socket,
-          ack?: (res: { ok: boolean; error?: string }) => void,
-        ) => {
-          matchmaking.leaveQueue(socket.data.user.id);
+      safeHandler(async (socket: Socket, ack?: (res: { ok: boolean; error?: string }) => void) => {
+        matchmaking.leaveQueue(socket.data.user.id);
 
-          if (ack) ack({ ok: true });
-        },
-        logger,
-      ),
+        if (ack) ack({ ok: true });
+      }, logger),
     );
 
     socket.on(

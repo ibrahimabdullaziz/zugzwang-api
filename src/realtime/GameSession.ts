@@ -34,11 +34,13 @@ export class GameSession {
 
   drawOffer: { offeredBy: string | null } = { offeredBy: null };
   disconnectedTimer?: NodeJS.Timeout;
+  turnTimer?: NodeJS.Timeout;
+  abortTimer?: NodeJS.Timeout;
 
   private io: Server;
   clock: Clock;
-  turnTimer?: NodeJS.Timeout;
   private turnStartedAt: number;
+  private abortDeadline?: number;
   private lastTask: Promise<unknown> = Promise.resolve();
 
   constructor(data: GameSessionData) {
@@ -48,6 +50,7 @@ export class GameSession {
     this.category = data.category;
     this.timeControl = data.timeControl;
     this.game = data.game;
+    this.io = data.io;
 
     if (data.gameInstance) {
       this.gameInstance = data.gameInstance;
@@ -57,19 +60,23 @@ export class GameSession {
       this.gameInstance = new ChessGame();
     }
 
-    this.io = data.io;
+    this.turnStartedAt = performance.now();
+
+    const isFirstMove = this.gameInstance.history.length === 0;
 
     this.clock = new Clock(
       this.timeControl.baseSeconds,
       this.timeControl.incrementSeconds,
-      this.gameInstance.turn,
+      isFirstMove ? 'b' : this.gameInstance.turn,
     );
 
-    this.turnStartedAt = performance.now();
-
     if (this.game.status === 'ACTIVE') {
-      this.clock.start(this.turnStartedAt);
-      this.resetTurnTimer();
+      if (isFirstMove) {
+        this.startAbortTimer();
+      } else {
+        this.clock.start(this.turnStartedAt);
+        this.resetTurnTimer();
+      }
     }
   }
 
@@ -79,42 +86,30 @@ export class GameSession {
     return currentTask;
   }
 
-  private async finishOnTimeout(): Promise<void> {
-    if (this.game.status !== 'ACTIVE') return;
-
-    const timedOutColor = this.gameInstance.turn;
-    const opponentColor = timedOutColor === 'w' ? 'b' : 'w';
-
-    const insufficientMaterial = this.gameInstance.isInsufficientMaterial();
-
-    const result: GameResult = insufficientMaterial
-      ? 'DRAW'
-      : opponentColor === 'w'
-        ? 'WHITE_WIN'
-        : 'BLACK_WIN';
-
-    const reason: ResultReason = insufficientMaterial ? 'INSUFFICIENT_MATERIAL' : 'TIMEOUT';
-
-    this.game.status = 'FINISHED';
+  private clearTimers(): void {
+    clearTimeout(this.abortTimer);
+    this.abortTimer = undefined;
+    this.abortDeadline = undefined;
 
     clearTimeout(this.turnTimer);
     this.turnTimer = undefined;
 
     clearTimeout(this.disconnectedTimer);
     this.disconnectedTimer = undefined;
+  }
 
-    await finish(this.gameId, {
-      status: 'FINISHED',
-      result,
-      reason,
-      finalFen: this.gameInstance.fen,
-      pgn: '',
-    });
+  private startAbortTimer(): void {
+    clearTimeout(this.abortTimer);
 
-    this.io.to(`game:${this.gameId}`).emit('game:over', {
-      result,
-      reason,
-    });
+    this.abortDeadline = performance.now() + 30_000;
+    this.abortTimer = setTimeout(() => {
+      void this.handleAbortBeforeFirstMove();
+    }, 30_000);
+  }
+
+  emitClockSnapshot(): void {
+    const snapshot = this.clock.getSnapshot(performance.now());
+    this.io.to(`game:${this.gameId}`).emit('clock:update', snapshot);
   }
 
   resetTurnTimer(): void {
@@ -133,7 +128,6 @@ export class GameSession {
       this.turnTimer = setTimeout(() => {
         void this.handleTimeout();
       }, 0);
-
       return;
     }
 
@@ -142,47 +136,79 @@ export class GameSession {
     }, remainingTime);
   }
 
+  private async abortBeforeFirstMoveLocked(): Promise<void> {
+    if (this.game.status !== 'ACTIVE' || this.gameInstance.history.length > 0) {
+      return;
+    }
+
+    this.game.status = 'ABANDONED';
+    this.clearTimers();
+
+    await finish(this.gameId, {
+      status: 'ABANDONED',
+      result: 'DRAW',
+      reason: 'ABANDONED',
+      finalFen: this.gameInstance.fen,
+      pgn: '',
+    });
+
+    this.io.to(`game:${this.gameId}`).emit('game:over', {
+      result: null,
+      reason: 'ABANDONED',
+    });
+  }
+
+  private async handleAbortBeforeFirstMove(): Promise<void> {
+    return this.mutex(async () => {
+      await this.abortBeforeFirstMoveLocked();
+    });
+  }
+
+  private async finishOnTimeout(): Promise<void> {
+    if (this.game.status !== 'ACTIVE') return;
+
+    const timedOutColor = this.gameInstance.turn;
+    const opponentColor = timedOutColor === 'w' ? 'b' : 'w';
+
+    const result: GameResult = this.gameInstance.isInsufficientMaterial()
+      ? 'DRAW'
+      : opponentColor === 'w'
+        ? 'WHITE_WIN'
+        : 'BLACK_WIN';
+
+    const reason: ResultReason = result === 'DRAW' ? 'INSUFFICIENT_MATERIAL' : 'TIMEOUT';
+
+    this.game.status = 'FINISHED';
+    this.clearTimers();
+
+    await finish(this.gameId, {
+      status: 'FINISHED',
+      result,
+      reason,
+      finalFen: this.gameInstance.fen,
+      pgn: '',
+    });
+
+    this.io.to(`game:${this.gameId}`).emit('game:over', {
+      result,
+      reason,
+    });
+  }
+
   async handleTimeout(): Promise<void> {
     return this.mutex(async () => {
       if (this.game.status !== 'ACTIVE') return;
 
       const now = performance.now();
-      const timedOutColor = this.gameInstance.turn;
-      const remainingTime = this.clock.getRemainingTime(timedOutColor, now);
+      const sideToMove = this.gameInstance.turn;
+      const remainingTime = this.clock.getRemainingTime(sideToMove, now);
 
       if (remainingTime > 0) {
         this.resetTurnTimer();
         return;
       }
 
-      const opponentColor = timedOutColor === 'w' ? 'b' : 'w';
-
-      const result: GameResult = this.gameInstance.isInsufficientMaterial()
-        ? opponentColor === 'w'
-          ? 'WHITE_WIN'
-          : 'BLACK_WIN'
-        : 'DRAW';
-
-      const reason: ResultReason = result === 'DRAW' ? 'INSUFFICIENT_MATERIAL' : 'TIMEOUT';
-
-      this.game.status = 'FINISHED';
-      clearTimeout(this.turnTimer);
-      this.turnTimer = undefined;
-      clearTimeout(this.disconnectedTimer);
-      this.disconnectedTimer = undefined;
-
-      await finish(this.gameId, {
-        status: 'FINISHED',
-        result,
-        reason,
-        finalFen: this.gameInstance.fen,
-        pgn: '',
-      });
-
-      this.io.to(`game:${this.gameId}`).emit('game:over', {
-        result,
-        reason,
-      });
+      await this.finishOnTimeout();
     });
   }
 
@@ -203,28 +229,41 @@ export class GameSession {
         throw new AppError(ErrorCode.ILLEGAL_MOVE, 400, 'Invalid UCI formatting');
       }
 
+      const isFirstMove = this.gameInstance.history.length === 0;
       const now = performance.now();
-      const remainingBeforeMove = this.clock.getRemainingTime(sideToMove, now);
 
-      if (remainingBeforeMove <= 0) {
-        await this.finishOnTimeout();
-        throw new AppError(ErrorCode.CONFLICT, 409, 'Your clock has expired');
+      if (isFirstMove && this.abortDeadline !== undefined && now >= this.abortDeadline) {
+        await this.abortBeforeFirstMoveLocked();
+
+        throw new AppError(ErrorCode.CONFLICT, 409, 'First move deadline expired');
       }
 
-      const timeSpentMs = Math.max(0, now - this.turnStartedAt);
+      if (!isFirstMove) {
+        const remainingBeforeMove = this.clock.getRemainingTime(sideToMove, now);
+
+        if (remainingBeforeMove <= 0) {
+          await this.finishOnTimeout();
+
+          throw new AppError(ErrorCode.CONFLICT, 409, 'Your clock has expired');
+        }
+      }
+
+      const timeSpentMs = isFirstMove ? 0 : Math.round(now - this.turnStartedAt);
 
       const moveData = this.gameInstance.applyMove(uci);
 
-      const timedOut = this.clock.completeMove(now);
+      if (!isFirstMove) {
+        const timedOut = this.clock.completeMove(now);
 
-      if (timedOut) {
-        await this.finishOnTimeout();
-        throw new AppError(ErrorCode.CONFLICT, 409, 'Your clock has expired');
+        if (timedOut) {
+          await this.finishOnTimeout();
+
+          throw new AppError(ErrorCode.CONFLICT, 409, 'Your clock has expired');
+        }
       }
 
       const ply = this.gameInstance.history.length;
-      const nextColor = this.gameInstance.turn;
-      const clockAfterMs = this.clock.getRemainingTime(nextColor, now);
+      const clockAfterMs = Math.round(this.clock.getStoredRemainingTime(sideToMove));
 
       await appendMove(
         this.gameId,
@@ -233,23 +272,19 @@ export class GameSession {
           san: moveData.san,
           uci,
           fenAfter: moveData.fen,
-          timeSpentMs: Math.round(timeSpentMs),
-          clockAfterMs: Math.round(clockAfterMs),
+          timeSpentMs,
+          clockAfterMs,
           game: { connect: { id: this.gameId } },
         },
         {},
       );
 
       this.drawOffer.offeredBy = null;
-
       const outcome = this.gameInstance.getOutcome();
 
       if (outcome?.result) {
         this.game.status = 'FINISHED';
-        clearTimeout(this.turnTimer);
-        this.turnTimer = undefined;
-        clearTimeout(this.disconnectedTimer);
-        this.disconnectedTimer = undefined;
+        this.clearTimers();
 
         await finish(this.gameId, {
           status: 'FINISHED',
@@ -263,9 +298,17 @@ export class GameSession {
           result: outcome.result,
           reason: outcome.reason,
         });
+      } else if (isFirstMove) {
+        this.clearTimers();
+
+        this.turnStartedAt = performance.now();
+        this.clock.start(this.turnStartedAt);
+        this.resetTurnTimer();
+        this.emitClockSnapshot();
       } else {
         this.turnStartedAt = now;
         this.resetTurnTimer();
+        this.emitClockSnapshot();
       }
 
       return { ply, ...moveData, uci, outcome };
@@ -274,6 +317,7 @@ export class GameSession {
 
   async resign(userId: string) {
     let outcome: { result: GameResult; reason: ResultReason };
+
     if (userId === this.whiteId) {
       outcome = {
         result: 'BLACK_WIN',
@@ -285,8 +329,15 @@ export class GameSession {
         reason: 'RESIGNATION',
       };
     } else {
-      throw new AppError(ErrorCode.FORBIDDEN, 401, 'You don`t have access to do this');
+      throw new AppError(ErrorCode.FORBIDDEN, 401, 'You don’t have access to do this');
     }
+
+    if (this.game.status !== 'ACTIVE') {
+      throw new AppError(ErrorCode.CONFLICT, 409, 'Game is not active');
+    }
+
+    this.game.status = 'FINISHED';
+    this.clearTimers();
 
     await finish(this.gameId, {
       status: 'FINISHED',
@@ -295,33 +346,59 @@ export class GameSession {
       finalFen: this.gameInstance.fen,
       pgn: '',
     });
+
+    this.io.to(`game:${this.gameId}`).emit('game:over', outcome);
+
     return outcome;
   }
 
   async handleDrawOffer(userId: string) {
     if (userId !== this.blackId && userId !== this.whiteId) {
-      throw new AppError(ErrorCode.FORBIDDEN, 401, 'You don`t have access to do this');
+      throw new AppError(ErrorCode.FORBIDDEN, 401, 'You don’t have access to do this');
     }
+
     this.drawOffer.offeredBy = userId;
   }
 
   async handleDrawAccept(userId: string) {
     if (this.drawOffer.offeredBy === null || this.drawOffer.offeredBy === userId) {
-      throw new AppError(ErrorCode.FORBIDDEN, 401, 'You don`t have access to do this');
+      throw new AppError(ErrorCode.FORBIDDEN, 401, 'You don’t have access to do this');
     }
 
-    return await finish(this.gameId, {
+    if (userId !== this.whiteId && userId !== this.blackId) {
+      throw new AppError(ErrorCode.FORBIDDEN, 401, 'You don’t have access to do this');
+    }
+
+    if (this.game.status !== 'ACTIVE') {
+      throw new AppError(ErrorCode.CONFLICT, 409, 'Game is not active');
+    }
+
+    this.game.status = 'FINISHED';
+    this.clearTimers();
+
+    const outcome = await finish(this.gameId, {
       status: 'FINISHED',
       result: 'DRAW',
       reason: 'DRAW_AGREEMENT',
       finalFen: this.gameInstance.fen,
       pgn: '',
     });
+
+    this.io.to(`game:${this.gameId}`).emit('game:over', {
+      result: 'DRAW',
+      reason: 'DRAW_AGREEMENT',
+    });
+
+    return outcome;
   }
 
   async handleDrawDecline(userId: string) {
     if (this.drawOffer.offeredBy === null || this.drawOffer.offeredBy === userId) {
-      throw new AppError(ErrorCode.FORBIDDEN, 401, 'You don`t have access to do this');
+      throw new AppError(ErrorCode.FORBIDDEN, 401, 'You don’t have access to do this');
+    }
+
+    if (userId !== this.whiteId && userId !== this.blackId) {
+      throw new AppError(ErrorCode.FORBIDDEN, 401, 'You don’t have access to do this');
     }
 
     this.drawOffer.offeredBy = null;
@@ -333,29 +410,33 @@ export class GameSession {
 
     if (!isWhite && !isBlack) return;
 
-    if (this.disconnectedTimer) {
-      clearTimeout(this.disconnectedTimer);
-    }
+    clearTimeout(this.disconnectedTimer);
 
-    io.to(`game:${this.gameId}`).emit('game:opponent:disconnected', { graceSeconds: 30 });
+    io.to(`game:${this.gameId}`).emit('game:opponent:disconnected', {
+      graceSeconds: 30,
+    });
 
-    this.disconnectedTimer = setTimeout(async () => {
-      if (this.game.status !== 'ACTIVE') return;
+    this.disconnectedTimer = setTimeout(() => {
+      void this.mutex(async () => {
+        if (this.game.status !== 'ACTIVE') return;
 
-      this.game.status = 'FINISHED';
-      const result = isWhite ? 'BLACK_WIN' : 'WHITE_WIN';
+        const result: GameResult = isWhite ? 'BLACK_WIN' : 'WHITE_WIN';
 
-      await finish(this.gameId, {
-        status: 'FINISHED',
-        result: result,
-        reason: 'ABANDONED',
-        finalFen: this.gameInstance.fen,
-        pgn: '',
-      });
+        this.game.status = 'FINISHED';
+        this.clearTimers();
 
-      io.to(`game:${this.gameId}`).emit('game:over', {
-        result: result,
-        reason: 'ABANDONED',
+        await finish(this.gameId, {
+          status: 'FINISHED',
+          result,
+          reason: 'ABANDONED',
+          finalFen: this.gameInstance.fen,
+          pgn: '',
+        });
+
+        io.to(`game:${this.gameId}`).emit('game:over', {
+          result,
+          reason: 'ABANDONED',
+        });
       });
     }, 30_000);
   }
