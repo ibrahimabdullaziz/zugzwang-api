@@ -39,9 +39,9 @@ export class ChessGame {
   }
 
   getLegalMoves(): string[] {
-    return this.chess.moves({ verbose: true }).map(
-      ({ from, to, promotion }) => `${from}${to}${promotion ?? ''}`,
-    );
+    return this.chess
+      .moves({ verbose: true })
+      .map(({ from, to, promotion }) => `${from}${to}${promotion ?? ''}`);
   }
 
   getOutcome(): OutCome | null {
@@ -79,6 +79,10 @@ export class ChessGame {
     }
 
     return null;
+  }
+
+  isInsufficientMaterial(): boolean {
+    return this.chess.isInsufficientMaterial();
   }
 
   get fen(): string {

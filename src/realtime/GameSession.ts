@@ -5,14 +5,16 @@ import { ErrorCode } from '../common/errors/codes.js';
 import { ChessGame } from '../modules/chess/chessGame.js';
 import { isValidUci } from '../modules/chess/uci.js';
 import { appendMove, finish } from '../modules/games/games.repository.js';
+import { Clock } from '../modules/clocks/clock.js';
 
 export interface GameSessionData {
   gameId: string;
   whiteId: string;
   blackId: string;
   category: string;
-  timeControl: unknown;
+  timeControl: { baseSeconds: number; incrementSeconds: number };
   game: Game;
+  io: Server;
   gameInstance?: ChessGame;
   initialMoves?: string[];
 }
@@ -22,7 +24,7 @@ export class GameSession {
   whiteId: string;
   blackId: string;
   category: string;
-  timeControl: unknown;
+  timeControl: { baseSeconds: number; incrementSeconds: number };
   game: Game;
   gameInstance: ChessGame;
 
@@ -33,6 +35,10 @@ export class GameSession {
   drawOffer: { offeredBy: string | null } = { offeredBy: null };
   disconnectedTimer?: NodeJS.Timeout;
 
+  private io: Server;
+  clock: Clock;
+  turnTimer?: NodeJS.Timeout;
+  private turnStartedAt: number;
   private lastTask: Promise<unknown> = Promise.resolve();
 
   constructor(data: GameSessionData) {
@@ -50,6 +56,21 @@ export class GameSession {
     } else {
       this.gameInstance = new ChessGame();
     }
+
+    this.io = data.io;
+
+    this.clock = new Clock(
+      this.timeControl.baseSeconds,
+      this.timeControl.incrementSeconds,
+      this.gameInstance.turn,
+    );
+
+    this.turnStartedAt = performance.now();
+
+    if (this.game.status === 'ACTIVE') {
+      this.clock.start(this.turnStartedAt);
+      this.resetTurnTimer();
+    }
   }
 
   async mutex<T>(task: () => Promise<T>): Promise<T> {
@@ -58,14 +79,121 @@ export class GameSession {
     return currentTask;
   }
 
+  private async finishOnTimeout(): Promise<void> {
+    if (this.game.status !== 'ACTIVE') return;
+
+    const timedOutColor = this.gameInstance.turn;
+    const opponentColor = timedOutColor === 'w' ? 'b' : 'w';
+
+    const insufficientMaterial = this.gameInstance.isInsufficientMaterial();
+
+    const result: GameResult = insufficientMaterial
+      ? 'DRAW'
+      : opponentColor === 'w'
+        ? 'WHITE_WIN'
+        : 'BLACK_WIN';
+
+    const reason: ResultReason = insufficientMaterial ? 'INSUFFICIENT_MATERIAL' : 'TIMEOUT';
+
+    this.game.status = 'FINISHED';
+
+    clearTimeout(this.turnTimer);
+    this.turnTimer = undefined;
+
+    clearTimeout(this.disconnectedTimer);
+    this.disconnectedTimer = undefined;
+
+    await finish(this.gameId, {
+      status: 'FINISHED',
+      result,
+      reason,
+      finalFen: this.gameInstance.fen,
+      pgn: '',
+    });
+
+    this.io.to(`game:${this.gameId}`).emit('game:over', {
+      result,
+      reason,
+    });
+  }
+
+  resetTurnTimer(): void {
+    clearTimeout(this.turnTimer);
+
+    if (this.game.status !== 'ACTIVE') {
+      this.turnTimer = undefined;
+      return;
+    }
+
+    const now = performance.now();
+    const sideToMove = this.gameInstance.turn;
+    const remainingTime = this.clock.getRemainingTime(sideToMove, now);
+
+    if (remainingTime <= 0) {
+      this.turnTimer = setTimeout(() => {
+        void this.handleTimeout();
+      }, 0);
+
+      return;
+    }
+
+    this.turnTimer = setTimeout(() => {
+      void this.handleTimeout();
+    }, remainingTime);
+  }
+
+  async handleTimeout(): Promise<void> {
+    return this.mutex(async () => {
+      if (this.game.status !== 'ACTIVE') return;
+
+      const now = performance.now();
+      const timedOutColor = this.gameInstance.turn;
+      const remainingTime = this.clock.getRemainingTime(timedOutColor, now);
+
+      if (remainingTime > 0) {
+        this.resetTurnTimer();
+        return;
+      }
+
+      const opponentColor = timedOutColor === 'w' ? 'b' : 'w';
+
+      const result: GameResult = this.gameInstance.isInsufficientMaterial()
+        ? opponentColor === 'w'
+          ? 'WHITE_WIN'
+          : 'BLACK_WIN'
+        : 'DRAW';
+
+      const reason: ResultReason = result === 'DRAW' ? 'INSUFFICIENT_MATERIAL' : 'TIMEOUT';
+
+      this.game.status = 'FINISHED';
+      clearTimeout(this.turnTimer);
+      this.turnTimer = undefined;
+      clearTimeout(this.disconnectedTimer);
+      this.disconnectedTimer = undefined;
+
+      await finish(this.gameId, {
+        status: 'FINISHED',
+        result,
+        reason,
+        finalFen: this.gameInstance.fen,
+        pgn: '',
+      });
+
+      this.io.to(`game:${this.gameId}`).emit('game:over', {
+        result,
+        reason,
+      });
+    });
+  }
+
   async handleMove(userId: string, uci: string) {
     return this.mutex(async () => {
       if (this.game.status !== 'ACTIVE') {
         throw new AppError(ErrorCode.CONFLICT, 409, 'Game is not active');
       }
 
-      this.drawOffer.offeredBy = null;
-      const currentPlayerId = this.gameInstance.turn === 'w' ? this.whiteId : this.blackId;
+      const sideToMove = this.gameInstance.turn;
+      const currentPlayerId = sideToMove === 'w' ? this.whiteId : this.blackId;
 
       if (currentPlayerId !== userId) {
         throw new AppError(ErrorCode.NOT_YOUR_TURN, 400, 'It is not your turn');
@@ -75,35 +203,69 @@ export class GameSession {
         throw new AppError(ErrorCode.ILLEGAL_MOVE, 400, 'Invalid UCI formatting');
       }
 
-      const moveData = this.gameInstance.applyMove(uci);
-      const ply = this.gameInstance.history.length;
+      const now = performance.now();
+      const remainingBeforeMove = this.clock.getRemainingTime(sideToMove, now);
 
-      const move = await appendMove(
+      if (remainingBeforeMove <= 0) {
+        await this.finishOnTimeout();
+        throw new AppError(ErrorCode.CONFLICT, 409, 'Your clock has expired');
+      }
+
+      const timeSpentMs = Math.max(0, now - this.turnStartedAt);
+
+      const moveData = this.gameInstance.applyMove(uci);
+
+      const timedOut = this.clock.completeMove(now);
+
+      if (timedOut) {
+        await this.finishOnTimeout();
+        throw new AppError(ErrorCode.CONFLICT, 409, 'Your clock has expired');
+      }
+
+      const ply = this.gameInstance.history.length;
+      const nextColor = this.gameInstance.turn;
+      const clockAfterMs = this.clock.getRemainingTime(nextColor, now);
+
+      await appendMove(
         this.gameId,
         {
           ply,
           san: moveData.san,
           uci,
           fenAfter: moveData.fen,
-          timeSpentMs: 0,
-          clockAfterMs: 0,
+          timeSpentMs: Math.round(timeSpentMs),
+          clockAfterMs: Math.round(clockAfterMs),
           game: { connect: { id: this.gameId } },
         },
         {},
       );
 
-      void move;
+      this.drawOffer.offeredBy = null;
 
       const outcome = this.gameInstance.getOutcome();
+
       if (outcome?.result) {
         this.game.status = 'FINISHED';
+        clearTimeout(this.turnTimer);
+        this.turnTimer = undefined;
+        clearTimeout(this.disconnectedTimer);
+        this.disconnectedTimer = undefined;
+
         await finish(this.gameId, {
-          status: this.game.status,
+          status: 'FINISHED',
           result: outcome.result,
           reason: outcome.reason,
           finalFen: moveData.fen,
           pgn: '',
         });
+
+        this.io.to(`game:${this.gameId}`).emit('game:over', {
+          result: outcome.result,
+          reason: outcome.reason,
+        });
+      } else {
+        this.turnStartedAt = now;
+        this.resetTurnTimer();
       }
 
       return { ply, ...moveData, uci, outcome };
@@ -130,7 +292,7 @@ export class GameSession {
       status: 'FINISHED',
       result: outcome.result,
       reason: outcome.reason,
-      finalFen: '',
+      finalFen: this.gameInstance.fen,
       pgn: '',
     });
     return outcome;
@@ -152,7 +314,7 @@ export class GameSession {
       status: 'FINISHED',
       result: 'DRAW',
       reason: 'DRAW_AGREEMENT',
-      finalFen: '',
+      finalFen: this.gameInstance.fen,
       pgn: '',
     });
   }
@@ -177,7 +339,6 @@ export class GameSession {
 
     io.to(`game:${this.gameId}`).emit('game:opponent:disconnected', { graceSeconds: 30 });
 
-    // 👈 هنا الحفظ والتعديل للـ 30 ثانية والشرط
     this.disconnectedTimer = setTimeout(async () => {
       if (this.game.status !== 'ACTIVE') return;
 
