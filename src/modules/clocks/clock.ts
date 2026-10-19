@@ -71,16 +71,25 @@ export class Clock {
   }
 
   getSnapshot(now: number): {
-    whiteRemainingMs: number;
-    blackRemainingMs: number;
+    whiteMs: number;
+    blackMs: number;
     activeColor: 'w' | 'b';
     serverTimestamp: number;
   } {
     return {
-      whiteRemainingMs: this.getRemainingTime('w', now),
-      blackRemainingMs: this.getRemainingTime('b', now),
+      whiteMs: this.getRemainingTime('w', now),
+      blackMs: this.getRemainingTime('b', now),
       activeColor: this.activeColor,
-      serverTimestamp: now,
+      serverTimestamp: Date.now(),
     };
+  }
+
+  getClockSnapshot(): {
+    whiteMs: number;
+    blackMs: number;
+    activeColor: 'w' | 'b';
+    serverTimestamp: number;
+  } {
+    return this.getSnapshot(performance.now());
   }
 }

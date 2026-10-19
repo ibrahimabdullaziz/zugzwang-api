@@ -28,8 +28,8 @@ interface ServerToClientEvents {
   'game:error': (error: { code: string; message: string }) => void;
   'queue:matched': (data: { gameId: string }) => void;
   'clock:update': (data: {
-    whiteRemainingMs: number;
-    blackRemainingMs: number;
+    whiteMs: number;
+    blackMs: number;
     activeColor: 'w' | 'b';
     serverTimestamp: number;
   }) => void;

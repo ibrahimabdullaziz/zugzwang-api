@@ -311,7 +311,7 @@ export class GameSession {
         this.emitClockSnapshot();
       }
 
-      return { ply, ...moveData, uci, outcome };
+      return { ply, ...moveData, uci, outcome, clocks: this.clock.getClockSnapshot() };
     });
   }
 

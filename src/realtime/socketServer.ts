@@ -79,7 +79,7 @@ export function createSocketServer(httpServer: HttpServer, deps: SocketServerDep
         }
 
         const gameSession = GameSessionManager.getInstance();
-        const session = await gameSession.getOrLoad(gameId);
+        const session = await gameSession.getOrLoad(gameId, io);
 
         if (!session) {
           socket.emit('error', { message: 'Game not found or finished' });
@@ -130,7 +130,7 @@ export function createSocketServer(httpServer: HttpServer, deps: SocketServerDep
           }
           const sessionManager = GameSessionManager.getInstance();
 
-          const session = await sessionManager.getOrLoad(data.gameId);
+          const session = await sessionManager.getOrLoad(data.gameId, io);
           if (!session) {
             return ack({ ok: false, error: 'Game session not found' });
           }
@@ -175,7 +175,7 @@ export function createSocketServer(httpServer: HttpServer, deps: SocketServerDep
           const { gameId: validatedGameId } = validation.data;
           const sessionManager = GameSessionManager.getInstance();
 
-          const session = await sessionManager.getOrLoad(validatedGameId);
+          const session = await sessionManager.getOrLoad(validatedGameId, io);
           if (!session) {
             return ack({ ok: false, error: 'Game session not found' });
           }
@@ -211,7 +211,7 @@ export function createSocketServer(httpServer: HttpServer, deps: SocketServerDep
           const { gameId: validatedGameId } = validation.data;
           const sessionManager = GameSessionManager.getInstance();
 
-          const session = await sessionManager.getOrLoad(validatedGameId);
+          const session = await sessionManager.getOrLoad(validatedGameId, io);
           if (!session) {
             return ack({ ok: false, error: 'Game session not found' });
           }
@@ -246,7 +246,7 @@ export function createSocketServer(httpServer: HttpServer, deps: SocketServerDep
           const { gameId: validatedGameId } = validation.data;
           const sessionManager = GameSessionManager.getInstance();
 
-          const session = await sessionManager.getOrLoad(validatedGameId);
+          const session = await sessionManager.getOrLoad(validatedGameId, io);
           if (!session) {
             return ack({ ok: false, error: 'Game session not found' });
           }
@@ -282,7 +282,7 @@ export function createSocketServer(httpServer: HttpServer, deps: SocketServerDep
           const { gameId: validatedGameId } = validation.data;
           const sessionManager = GameSessionManager.getInstance();
 
-          const session = await sessionManager.getOrLoad(validatedGameId);
+          const session = await sessionManager.getOrLoad(validatedGameId, io);
           if (!session) {
             return ack({ ok: false, error: 'Game session not found' });
           }

@@ -1,5 +1,6 @@
 import { findById } from '../modules/games/games.repository.js';
 import { GameSession } from './GameSession.js';
+import type { Server } from 'socket.io';
 
 export class GameSessionManager {
   private static instance: GameSessionManager;
@@ -12,7 +13,7 @@ export class GameSessionManager {
     return GameSessionManager.instance;
   }
 
-  public async getOrLoad(gameId: string): Promise<GameSession | null> {
+  public async getOrLoad(gameId: string, io: Server): Promise<GameSession | null> {
     if (this.sessions.has(gameId)) {
       return this.sessions.get(gameId) ?? null;
     }
@@ -34,6 +35,7 @@ export class GameSessionManager {
         incrementSeconds: game.incrementSecs,
       },
       game,
+      io,
       initialMoves,
     });
     this.sessions.set(gameId, session);
