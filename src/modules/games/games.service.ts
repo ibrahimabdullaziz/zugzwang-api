@@ -11,22 +11,11 @@ import {
 } from './games.repository.js';
 import { AppError } from '../../common/errors/AppError.js';
 import { ErrorCode } from '../../common/errors/codes.js';
-import { Game, RatingCategory } from '@prisma/client';
+import { Game } from '@prisma/client';
 import { buildPgn } from '../chess/pgn.js';
 import { nanoid } from 'nanoid';
 import { INVITE_CODE_LENGTH } from './games.schema.js';
-
-export function determineRatingCategory(timeControl: TimeControl): RatingCategory {
-  const estimatedSeconds: number = timeControl.baseSeconds + 40 * timeControl.incrementSecs;
-
-  if (estimatedSeconds <= 180) {
-    return RatingCategory.BULLET;
-  } else if (estimatedSeconds < 600) {
-    return RatingCategory.BLITZ;
-  } else {
-    return RatingCategory.RAPID;
-  }
-}
+import { determineRatingCategory } from '../ratings/category.js';
 
 export async function getGame(gameId: string) {
   const game = await findById(gameId, true);
