@@ -4,8 +4,9 @@ import { AppError } from '../common/errors/AppError.js';
 import { ErrorCode } from '../common/errors/codes.js';
 import { ChessGame } from '../modules/chess/chessGame.js';
 import { isValidUci } from '../modules/chess/uci.js';
-import { appendMove, finish } from '../modules/games/games.repository.js';
+import { appendMove } from '../modules/games/games.repository.js';
 import { Clock } from '../modules/clocks/clock.js';
+import { finishGame } from '../modules/games/finishGame.js';
 
 export interface GameSessionData {
   gameId: string;
@@ -17,6 +18,7 @@ export interface GameSessionData {
   io: Server;
   gameInstance?: ChessGame;
   initialMoves?: string[];
+  onFinished?: () => void;
 }
 
 export class GameSession {
@@ -36,6 +38,7 @@ export class GameSession {
   disconnectedTimer?: NodeJS.Timeout;
   turnTimer?: NodeJS.Timeout;
   abortTimer?: NodeJS.Timeout;
+  onFinished?: () => void;
 
   private io: Server;
   clock: Clock;
@@ -51,6 +54,7 @@ export class GameSession {
     this.timeControl = data.timeControl;
     this.game = data.game;
     this.io = data.io;
+    this.onFinished = data.onFinished;
 
     if (data.gameInstance) {
       this.gameInstance = data.gameInstance;
@@ -141,10 +145,7 @@ export class GameSession {
       return;
     }
 
-    this.game.status = 'ABANDONED';
-    this.clearTimers();
-
-    await finish(this.gameId, {
+    const finishedGame = await finishGame(this.gameId, {
       status: 'ABANDONED',
       result: 'DRAW',
       reason: 'ABANDONED',
@@ -152,10 +153,16 @@ export class GameSession {
       pgn: '',
     });
 
-    this.io.to(`game:${this.gameId}`).emit('game:over', {
-      result: null,
-      reason: 'ABANDONED',
-    });
+    this.game = finishedGame.game;
+    this.clearTimers();
+    if (finishedGame.finishedNow) {
+      this.io.to(`game:${this.gameId}`).emit('game:over', {
+        result: null,
+        reason: 'ABANDONED',
+      });
+    }
+
+    this.onFinished?.();
   }
 
   private async handleAbortBeforeFirstMove(): Promise<void> {
@@ -178,10 +185,7 @@ export class GameSession {
 
     const reason: ResultReason = result === 'DRAW' ? 'INSUFFICIENT_MATERIAL' : 'TIMEOUT';
 
-    this.game.status = 'FINISHED';
-    this.clearTimers();
-
-    await finish(this.gameId, {
+    const finishedGame = await finishGame(this.gameId, {
       status: 'FINISHED',
       result,
       reason,
@@ -189,10 +193,17 @@ export class GameSession {
       pgn: '',
     });
 
-    this.io.to(`game:${this.gameId}`).emit('game:over', {
-      result,
-      reason,
-    });
+    this.game = finishedGame.game;
+    this.clearTimers();
+
+    if (finishedGame.finishedNow) {
+      this.io.to(`game:${this.gameId}`).emit('game:over', {
+        result,
+        reason,
+      });
+    }
+
+    this.onFinished?.();
   }
 
   async handleTimeout(): Promise<void> {
@@ -283,10 +294,7 @@ export class GameSession {
       const outcome = this.gameInstance.getOutcome();
 
       if (outcome?.result) {
-        this.game.status = 'FINISHED';
-        this.clearTimers();
-
-        await finish(this.gameId, {
+        const finishedGame = await finishGame(this.gameId, {
           status: 'FINISHED',
           result: outcome.result,
           reason: outcome.reason,
@@ -294,10 +302,16 @@ export class GameSession {
           pgn: '',
         });
 
-        this.io.to(`game:${this.gameId}`).emit('game:over', {
-          result: outcome.result,
-          reason: outcome.reason,
-        });
+        this.game = finishedGame.game;
+        this.clearTimers();
+
+        if (finishedGame.finishedNow) {
+          this.io.to(`game:${this.gameId}`).emit('game:over', {
+            result: outcome.result,
+            reason: outcome.reason,
+          });
+        }
+        this.onFinished?.();
       } else if (isFirstMove) {
         this.clearTimers();
 
@@ -316,40 +330,45 @@ export class GameSession {
   }
 
   async resign(userId: string) {
-    let outcome: { result: GameResult; reason: ResultReason };
+    return this.mutex(async () => {
+      let outcome: { result: GameResult; reason: ResultReason };
 
-    if (userId === this.whiteId) {
-      outcome = {
-        result: 'BLACK_WIN',
-        reason: 'RESIGNATION',
-      };
-    } else if (userId === this.blackId) {
-      outcome = {
-        result: 'WHITE_WIN',
-        reason: 'RESIGNATION',
-      };
-    } else {
-      throw new AppError(ErrorCode.FORBIDDEN, 401, 'You don’t have access to do this');
-    }
+      if (userId === this.whiteId) {
+        outcome = {
+          result: 'BLACK_WIN',
+          reason: 'RESIGNATION',
+        };
+      } else if (userId === this.blackId) {
+        outcome = {
+          result: 'WHITE_WIN',
+          reason: 'RESIGNATION',
+        };
+      } else {
+        throw new AppError(ErrorCode.FORBIDDEN, 401, 'You don’t have access to do this');
+      }
 
-    if (this.game.status !== 'ACTIVE') {
-      throw new AppError(ErrorCode.CONFLICT, 409, 'Game is not active');
-    }
+      if (this.game.status !== 'ACTIVE') {
+        throw new AppError(ErrorCode.CONFLICT, 409, 'Game is not active');
+      }
 
-    this.game.status = 'FINISHED';
-    this.clearTimers();
+      const finishedGame = await finishGame(this.gameId, {
+        status: 'FINISHED',
+        result: outcome.result,
+        reason: outcome.reason,
+        finalFen: this.gameInstance.fen,
+        pgn: '',
+      });
 
-    await finish(this.gameId, {
-      status: 'FINISHED',
-      result: outcome.result,
-      reason: outcome.reason,
-      finalFen: this.gameInstance.fen,
-      pgn: '',
+      this.game = finishedGame.game;
+      this.clearTimers();
+
+      if (finishedGame.finishedNow) {
+        this.io.to(`game:${this.gameId}`).emit('game:over', outcome);
+      }
+
+      this.onFinished?.();
+      return outcome;
     });
-
-    this.io.to(`game:${this.gameId}`).emit('game:over', outcome);
-
-    return outcome;
   }
 
   async handleDrawOffer(userId: string) {
@@ -361,35 +380,40 @@ export class GameSession {
   }
 
   async handleDrawAccept(userId: string) {
-    if (this.drawOffer.offeredBy === null || this.drawOffer.offeredBy === userId) {
-      throw new AppError(ErrorCode.FORBIDDEN, 401, 'You don’t have access to do this');
-    }
+    return this.mutex(async () => {
+      if (this.drawOffer.offeredBy === null || this.drawOffer.offeredBy === userId) {
+        throw new AppError(ErrorCode.FORBIDDEN, 401, 'You don’t have access to do this');
+      }
 
-    if (userId !== this.whiteId && userId !== this.blackId) {
-      throw new AppError(ErrorCode.FORBIDDEN, 401, 'You don’t have access to do this');
-    }
+      if (userId !== this.whiteId && userId !== this.blackId) {
+        throw new AppError(ErrorCode.FORBIDDEN, 401, 'You don’t have access to do this');
+      }
 
-    if (this.game.status !== 'ACTIVE') {
-      throw new AppError(ErrorCode.CONFLICT, 409, 'Game is not active');
-    }
+      if (this.game.status !== 'ACTIVE') {
+        throw new AppError(ErrorCode.CONFLICT, 409, 'Game is not active');
+      }
 
-    this.game.status = 'FINISHED';
-    this.clearTimers();
+      const outcome = await finishGame(this.gameId, {
+        status: 'FINISHED',
+        result: 'DRAW',
+        reason: 'DRAW_AGREEMENT',
+        finalFen: this.gameInstance.fen,
+        pgn: '',
+      });
 
-    const outcome = await finish(this.gameId, {
-      status: 'FINISHED',
-      result: 'DRAW',
-      reason: 'DRAW_AGREEMENT',
-      finalFen: this.gameInstance.fen,
-      pgn: '',
+      this.game = outcome.game;
+      this.clearTimers();
+
+      if (outcome.finishedNow) {
+        this.io.to(`game:${this.gameId}`).emit('game:over', {
+          result: 'DRAW',
+          reason: 'DRAW_AGREEMENT',
+        });
+      }
+
+      this.onFinished?.();
+      return outcome;
     });
-
-    this.io.to(`game:${this.gameId}`).emit('game:over', {
-      result: 'DRAW',
-      reason: 'DRAW_AGREEMENT',
-    });
-
-    return outcome;
   }
 
   async handleDrawDecline(userId: string) {
@@ -422,10 +446,7 @@ export class GameSession {
 
         const result: GameResult = isWhite ? 'BLACK_WIN' : 'WHITE_WIN';
 
-        this.game.status = 'FINISHED';
-        this.clearTimers();
-
-        await finish(this.gameId, {
+        const finishedGame = await finishGame(this.gameId, {
           status: 'FINISHED',
           result,
           reason: 'ABANDONED',
@@ -433,10 +454,16 @@ export class GameSession {
           pgn: '',
         });
 
-        io.to(`game:${this.gameId}`).emit('game:over', {
-          result,
-          reason: 'ABANDONED',
-        });
+        this.game = finishedGame.game;
+        this.clearTimers();
+
+        if (finishedGame.finishedNow) {
+          io.to(`game:${this.gameId}`).emit('game:over', {
+            result,
+            reason: 'ABANDONED',
+          });
+        }
+        this.onFinished?.();
       });
     }, 30_000);
   }

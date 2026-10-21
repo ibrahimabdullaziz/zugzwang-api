@@ -14,7 +14,7 @@ export async function finishGame(gameId: string, data: FinishGameData): Promise<
   return prisma.$transaction(async (tx) => {
     const rows = await tx.$queryRaw<Game[]>`
       SELECT *
-      FROM "games"
+      FROM "Game"
       WHERE id = ${gameId}
       FOR UPDATE
     `;
@@ -121,14 +121,14 @@ export async function finishGame(gameId: string, data: FinishGameData): Promise<
           {
             userId: game.whiteId!,
             gameId: game.id,
-            category: whiteRating.category as never,
+            category: game.category!,
             before: whiteRatingBefore,
             after: whiteRatingAfter,
           },
           {
             userId: game.blackId!,
             gameId: game.id,
-            category: blackRating.category as never,
+            category: game.category!,
             before: blackRatingBefore,
             after: blackRatingAfter,
           },
@@ -147,6 +147,10 @@ export async function finishGame(gameId: string, data: FinishGameData): Promise<
         blackRatingAfter,
       },
     });
+
+    if (updatedGame.status === 'WAITING') {
+      throw new AppError(ErrorCode.CONFLICT, 409, 'The game still in progress');
+    }
 
     return {
       game: updatedGame,

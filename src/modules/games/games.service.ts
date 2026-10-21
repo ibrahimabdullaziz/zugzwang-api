@@ -6,7 +6,6 @@ import {
   findActiveByUser,
   findById,
   findByInviteCode,
-  finish,
   joinGameConditional,
 } from './games.repository.js';
 import { AppError } from '../../common/errors/AppError.js';
@@ -16,6 +15,7 @@ import { buildPgn } from '../chess/pgn.js';
 import { nanoid } from 'nanoid';
 import { INVITE_CODE_LENGTH } from './games.schema.js';
 import { determineRatingCategory } from '../ratings/category.js';
+import { finishGame } from './finishGame.js';
 
 export async function getGame(gameId: string) {
   const game = await findById(gameId, true);
@@ -135,7 +135,7 @@ export async function resign(userId: string, gameId: string) {
     moves: movesList.map((m) => m.san),
   });
 
-  return await finish(gameId, {
+  return await finishGame(gameId, {
     status: 'FINISHED',
     ...outCome,
     pgn,
@@ -194,7 +194,7 @@ export async function abort(userId: string, gameId: string) {
     moves: [],
   });
 
-  return finish(gameId, {
+  return finishGame(gameId, {
     status: 'ABANDONED',
     ...outCome,
     pgn,

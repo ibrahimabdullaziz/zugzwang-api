@@ -37,6 +37,7 @@ export class GameSessionManager {
       game,
       io,
       initialMoves,
+      onFinished: () => this.removeSession(gameId),
     });
     this.sessions.set(gameId, session);
     return session;

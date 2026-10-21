@@ -2,7 +2,6 @@ import { Game, Prisma } from '@prisma/client';
 import { prisma } from '../../db/prisma.js';
 import { AppError } from '../../common/errors/AppError.js';
 import { ErrorCode } from '../../common/errors/codes.js';
-import { FinishGameData } from '../chess/types.js';
 
 export async function create(data: Prisma.GameCreateInput): Promise<Game | null> {
   return await prisma.game.create({
@@ -62,25 +61,6 @@ export async function appendMove(
     return await tx.game.update({
       where: { id: gameId },
       data: gameUpdate,
-    });
-  });
-}
-
-export async function finish(gameId: string, data: FinishGameData): Promise<Game | null> {
-  return await prisma.$transaction(async (tx) => {
-    const game = await prisma.game.findUnique({ where: { id: gameId } });
-    if (!game) {
-      throw new AppError(ErrorCode.GAME_NOT_FOUND, 404, 'Game not found');
-    }
-    if (game.status !== 'ACTIVE') {
-      throw new AppError(ErrorCode.GAME_IN_PROGRESS, 400, 'Game is not active');
-    }
-    return await tx.game.update({
-      where: { id: gameId },
-      data: {
-        ...data,
-        finishedAt: new Date(),
-      },
     });
   });
 }

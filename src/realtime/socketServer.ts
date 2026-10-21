@@ -145,13 +145,6 @@ export function createSocketServer(httpServer: HttpServer, deps: SocketServerDep
           });
 
           ack({ ok: true });
-
-          if (move.outcome?.result) {
-            io.to(`game:${data.gameId}`).emit(`game:over`, {
-              result: move.outcome.result,
-              reason: move.outcome.reason || 'CHECKMATE',
-            });
-          }
         },
         logger,
       ),
@@ -180,12 +173,7 @@ export function createSocketServer(httpServer: HttpServer, deps: SocketServerDep
             return ack({ ok: false, error: 'Game session not found' });
           }
 
-          const outcome = await session.resign(socket.data.user.id);
-
-          io.to(`game:${validatedGameId}`).emit('game:over', {
-            result: outcome.result,
-            reason: outcome.reason,
-          });
+          await session.resign(socket.data.user.id);
 
           ack({ ok: true });
         },
@@ -251,12 +239,7 @@ export function createSocketServer(httpServer: HttpServer, deps: SocketServerDep
             return ack({ ok: false, error: 'Game session not found' });
           }
 
-          const outcome = await session.handleDrawAccept(socket.data.user.id);
-
-          io.to(`game:${validatedGameId}`).emit('game:over', {
-            result: outcome?.result,
-            reason: outcome?.reason,
-          });
+          await session.handleDrawAccept(socket.data.user.id);
 
           ack({ ok: true });
         },
