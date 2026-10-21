@@ -105,13 +105,20 @@ export function createSocketServer(httpServer: HttpServer, deps: SocketServerDep
         if (userId === session.blackId) session.blackSocketId = socket.id;
 
         await session.handleReconnect(userId, socket.id, io);
+        if (isPlayer) {
+          gameSession.setPlayerSocket(
+            socket.id,
+            gameId,
+            userId === session.whiteId ? 'white' : 'black',
+          );
+        }
 
         await socket.join(roomName);
 
-        socket.emit('clock:update', session.clock.getSnapshot(performance.now()));
         socket.emit('game:state', {
           pgn: game.pgn,
           role: role,
+          clocks: session.clock.getSnapshot(),
         });
       }, logger),
     );
@@ -142,6 +149,7 @@ export function createSocketServer(httpServer: HttpServer, deps: SocketServerDep
             san: move.san,
             uci: move.uci,
             fen: move.fen,
+            clocks: move.clocks,
           });
 
           ack({ ok: true });
@@ -314,13 +322,8 @@ export function createSocketServer(httpServer: HttpServer, deps: SocketServerDep
         logger.info({ socketId: socket.id, reason }, 'Client disconnected');
 
         const sessionManager = GameSessionManager.getInstance();
-
-        for (const session of sessionManager.getAllSessions?.() || []) {
-          if (session.whiteSocketId === socket.id || session.blackSocketId === socket.id) {
-            await session.handleDisconnect(socket.id, io);
-            break;
-          }
-        }
+        const session = sessionManager.removePlayerSocket(socket.id);
+        if (session) await session.handleDisconnect(socket.id, io);
 
         if (socket.data?.user?.id) {
           matchmaking.leaveQueue(socket.data.user.id);

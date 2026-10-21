@@ -1,5 +1,4 @@
-import { Chess, Color } from 'chess.js';
-import { ChessGame } from '../chess/chessGame.js';
+import { Color } from 'chess.js';
 import { OutCome, TimeControl } from '../chess/types.js';
 import {
   create,
@@ -11,7 +10,6 @@ import {
 import { AppError } from '../../common/errors/AppError.js';
 import { ErrorCode } from '../../common/errors/codes.js';
 import { Game } from '@prisma/client';
-import { buildPgn } from '../chess/pgn.js';
 import { nanoid } from 'nanoid';
 import { INVITE_CODE_LENGTH } from './games.schema.js';
 import { determineRatingCategory } from '../ratings/category.js';
@@ -119,27 +117,9 @@ export async function resign(userId: string, gameId: string) {
     reason: 'RESIGNATION',
   };
 
-  const movesList = game.moves ?? [];
-  const chess = ChessGame.fromMoves(movesList.map((m) => m.uci));
-
-  const pgn = buildPgn({
-    white: game.white?.username ?? game.whiteId,
-    black: game.black?.username ?? game.blackId,
-    date: game.createdAt,
-    result: outCome.result,
-    reason: outCome.reason,
-    timeControl: {
-      baseSeconds: game.baseSeconds,
-      incrementSecs: game.incrementSecs,
-    },
-    moves: movesList.map((m) => m.san),
-  });
-
   return await finishGame(gameId, {
     status: 'FINISHED',
     ...outCome,
-    pgn,
-    finalFen: chess.fen,
   });
 }
 
@@ -181,23 +161,8 @@ export async function abort(userId: string, gameId: string) {
     reason: 'ABANDONED',
   };
 
-  const pgn = buildPgn({
-    white: game.white?.username ?? game.whiteId,
-    black: game.black?.username ?? game.blackId,
-    date: game.createdAt,
-    result: outCome.result,
-    reason: outCome.reason,
-    timeControl: {
-      baseSeconds: game.baseSeconds,
-      incrementSecs: game.incrementSecs,
-    },
-    moves: [],
-  });
-
   return finishGame(gameId, {
     status: 'ABANDONED',
     ...outCome,
-    pgn,
-    finalFen: new Chess().fen(),
   });
 }

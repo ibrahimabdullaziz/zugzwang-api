@@ -18,8 +18,28 @@ interface ClientToServerEvents {
 }
 
 interface ServerToClientEvents {
-  'game:state': (state: unknown) => void;
-  'game:move': (moveData: { ply: number; san: string; uci: string; fen: string }) => void;
+  'game:state': (state: {
+    pgn: string | null;
+    role: 'player' | 'spectator';
+    clocks: {
+      whiteMs: number;
+      blackMs: number;
+      activeColor: 'w' | 'b';
+      serverTimestamp: number;
+    };
+  }) => void;
+  'game:move': (moveData: {
+    ply: number;
+    san: string;
+    uci: string;
+    fen: string;
+    clocks: {
+      whiteMs: number;
+      blackMs: number;
+      activeColor: 'w' | 'b';
+      serverTimestamp: number;
+    };
+  }) => void;
   'game:over': (gameData: { result: string; reason: string }) => void;
   'game:opponent:disconnected': (data: { graceSeconds: number }) => void;
   'game:opponent:reconnected': () => void;
@@ -27,12 +47,6 @@ interface ServerToClientEvents {
   'game:draw:declined': () => void;
   'game:error': (error: { code: string; message: string }) => void;
   'queue:matched': (data: { gameId: string }) => void;
-  'clock:update': (data: {
-    whiteMs: number;
-    blackMs: number;
-    activeColor: 'w' | 'b';
-    serverTimestamp: number;
-  }) => void;
 }
 
 interface InterServerEvents {

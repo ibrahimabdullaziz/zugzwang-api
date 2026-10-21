@@ -30,6 +30,4 @@ export interface FinishGameData {
   status: typeof GameStatus.FINISHED | typeof GameStatus.ABANDONED;
   result: GameResult;
   reason: ResultReason;
-  finalFen: string;
-  pgn: string;
 }

@@ -71,7 +71,7 @@ export class GameSession {
     this.clock = new Clock(
       this.timeControl.baseSeconds,
       this.timeControl.incrementSeconds,
-      isFirstMove ? 'b' : this.gameInstance.turn,
+      this.gameInstance.turn,
     );
 
     if (this.game.status === 'ACTIVE') {
@@ -111,11 +111,6 @@ export class GameSession {
     }, 30_000);
   }
 
-  emitClockSnapshot(): void {
-    const snapshot = this.clock.getSnapshot(performance.now());
-    this.io.to(`game:${this.gameId}`).emit('clock:update', snapshot);
-  }
-
   resetTurnTimer(): void {
     clearTimeout(this.turnTimer);
 
@@ -149,8 +144,6 @@ export class GameSession {
       status: 'ABANDONED',
       result: 'DRAW',
       reason: 'ABANDONED',
-      finalFen: this.gameInstance.fen,
-      pgn: '',
     });
 
     this.game = finishedGame.game;
@@ -189,8 +182,6 @@ export class GameSession {
       status: 'FINISHED',
       result,
       reason,
-      finalFen: this.gameInstance.fen,
-      pgn: '',
     });
 
     this.game = finishedGame.game;
@@ -298,8 +289,6 @@ export class GameSession {
           status: 'FINISHED',
           result: outcome.result,
           reason: outcome.reason,
-          finalFen: moveData.fen,
-          pgn: '',
         });
 
         this.game = finishedGame.game;
@@ -318,14 +307,12 @@ export class GameSession {
         this.turnStartedAt = performance.now();
         this.clock.start(this.turnStartedAt);
         this.resetTurnTimer();
-        this.emitClockSnapshot();
       } else {
         this.turnStartedAt = now;
         this.resetTurnTimer();
-        this.emitClockSnapshot();
       }
 
-      return { ply, ...moveData, uci, outcome, clocks: this.clock.getClockSnapshot() };
+      return { ply, ...moveData, uci, outcome, clocks: this.clock.getSnapshot() };
     });
   }
 
@@ -355,8 +342,6 @@ export class GameSession {
         status: 'FINISHED',
         result: outcome.result,
         reason: outcome.reason,
-        finalFen: this.gameInstance.fen,
-        pgn: '',
       });
 
       this.game = finishedGame.game;
@@ -397,8 +382,6 @@ export class GameSession {
         status: 'FINISHED',
         result: 'DRAW',
         reason: 'DRAW_AGREEMENT',
-        finalFen: this.gameInstance.fen,
-        pgn: '',
       });
 
       this.game = outcome.game;
@@ -450,8 +433,6 @@ export class GameSession {
           status: 'FINISHED',
           result,
           reason: 'ABANDONED',
-          finalFen: this.gameInstance.fen,
-          pgn: '',
         });
 
         this.game = finishedGame.game;

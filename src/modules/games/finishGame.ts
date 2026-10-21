@@ -4,6 +4,8 @@ import { ErrorCode } from '../../common/errors/codes.js';
 import { prisma } from '../../db/prisma.js';
 import { FinishGameData } from '../chess/types.js';
 import { calculateEloChange } from '../ratings/elo.js';
+import { ChessGame } from '../chess/chessGame.js';
+import { buildPgn } from '../chess/pgn.js';
 
 type FinishGameResult = {
   game: Game;
@@ -28,6 +30,32 @@ export async function finishGame(gameId: string, data: FinishGameData): Promise<
     if (game.status === GameStatus.FINISHED || game.status === GameStatus.ABANDONED) {
       return { game, finishedNow: false };
     }
+
+    if (game.status === GameStatus.WAITING) {
+      throw new AppError(ErrorCode.CONFLICT, 409, 'The game still in progress');
+    }
+
+    const gameData = await tx.game.findUniqueOrThrow({
+      where: { id: gameId },
+      include: {
+        white: { select: { username: true } },
+        black: { select: { username: true } },
+        moves: { orderBy: { ply: 'asc' }, select: { uci: true, san: true } },
+      },
+    });
+    const finalFen = ChessGame.fromMoves(gameData.moves.map((move) => move.uci)).fen;
+    const pgn = buildPgn({
+      white: gameData.white?.username ?? game.whiteId ?? 'Anonymous',
+      black: gameData.black?.username ?? game.blackId ?? 'Anonymous',
+      date: game.createdAt,
+      result: data.result,
+      reason: data.reason,
+      timeControl: {
+        baseSeconds: game.baseSeconds,
+        incrementSecs: game.incrementSecs,
+      },
+      moves: gameData.moves.map((move) => move.san),
+    });
 
     let whiteRatingBefore: number | null = null;
     let whiteRatingAfter: number | null = null;
@@ -140,6 +168,8 @@ export async function finishGame(gameId: string, data: FinishGameData): Promise<
       where: { id: gameId },
       data: {
         ...data,
+        finalFen,
+        pgn,
         finishedAt: new Date(),
         whiteRatingBefore,
         whiteRatingAfter,
@@ -147,10 +177,6 @@ export async function finishGame(gameId: string, data: FinishGameData): Promise<
         blackRatingAfter,
       },
     });
-
-    if (updatedGame.status === 'WAITING') {
-      throw new AppError(ErrorCode.CONFLICT, 409, 'The game still in progress');
-    }
 
     return {
       game: updatedGame,

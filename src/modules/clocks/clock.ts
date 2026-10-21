@@ -70,7 +70,7 @@ export class Clock {
     return false;
   }
 
-  getSnapshot(now: number): {
+  getSnapshot(now = performance.now()): {
     whiteMs: number;
     blackMs: number;
     activeColor: 'w' | 'b';
@@ -84,12 +84,4 @@ export class Clock {
     };
   }
 
-  getClockSnapshot(): {
-    whiteMs: number;
-    blackMs: number;
-    activeColor: 'w' | 'b';
-    serverTimestamp: number;
-  } {
-    return this.getSnapshot(performance.now());
-  }
 }

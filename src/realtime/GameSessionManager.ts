@@ -5,6 +5,7 @@ import type { Server } from 'socket.io';
 export class GameSessionManager {
   private static instance: GameSessionManager;
   private sessions: Map<string, GameSession> = new Map();
+  private playerSockets = new Map<string, { gameId: string; role: 'white' | 'black' }>();
 
   public static getInstance(): GameSessionManager {
     if (!GameSessionManager.instance) {
@@ -44,13 +45,27 @@ export class GameSessionManager {
   }
 
   public removeSession(gameId: string): void {
+    const session = this.sessions.get(gameId);
+    if (session?.whiteSocketId) this.playerSockets.delete(session.whiteSocketId);
+    if (session?.blackSocketId) this.playerSockets.delete(session.blackSocketId);
     this.sessions.delete(gameId);
+  }
+
+  public setPlayerSocket(
+    socketId: string,
+    gameId: string,
+    role: 'white' | 'black',
+  ): void {
+    this.playerSockets.set(socketId, { gameId, role });
+  }
+
+  public removePlayerSocket(socketId: string): GameSession | undefined {
+    const association = this.playerSockets.get(socketId);
+    this.playerSockets.delete(socketId);
+    return association ? this.sessions.get(association.gameId) : undefined;
   }
 
   public getSession(gameId: string): GameSession | undefined {
     return this.sessions.get(gameId);
-  }
-  public getAllSessions(): GameSession[] {
-    return Array.from(this.sessions.values());
   }
 }
