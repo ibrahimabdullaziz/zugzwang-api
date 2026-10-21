@@ -19,7 +19,7 @@ interface SocketServerDeps {
 
 export function createSocketServer(httpServer: HttpServer, deps: SocketServerDeps) {
   const { logger, corsOrigin } = deps;
-  const io = new Server(httpServer, {
+  const io: Server = new Server(httpServer, {
     cors: {
       origin: Array.isArray(corsOrigin) ? [...corsOrigin] : (corsOrigin as string),
       methods: ['GET', 'POST'],

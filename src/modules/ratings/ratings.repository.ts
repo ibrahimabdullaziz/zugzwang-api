@@ -37,3 +37,23 @@ export async function getRatingLeaderboard(
 
   return { ratings, nextCursor };
 }
+
+export async function findRatingHistory(username: string, category: RatingCategory) {
+  return prisma.ratingHistory.findMany({
+    where: {
+      user: {
+        username,
+      },
+      category,
+    },
+    orderBy: { createdAt: 'asc' },
+    select: {
+      id: true,
+      gameId: true,
+      category: true,
+      before: true,
+      after: true,
+      createdAt: true,
+    },
+  });
+}
