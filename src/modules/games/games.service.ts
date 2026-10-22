@@ -166,3 +166,56 @@ export async function abort(userId: string, gameId: string) {
     ...outCome,
   });
 }
+
+export async function getGameReplay(gameId: string) {
+  const game = (await findById(gameId, true)) as
+    | (Game & {
+        moves: {
+          ply: number;
+          san: string;
+          uci: string;
+          fenAfter: string;
+          timeSpentMs: number;
+          clockAfterMs: number;
+        }[];
+      })
+    | null;
+
+  if (!game) {
+    throw new AppError(ErrorCode.GAME_NOT_FOUND, 404, 'Game not found');
+  }
+
+  return {
+    gameId: game.id,
+    white: game.whiteId,
+    black: game.blackId,
+    result: game.result,
+    reason: game.reason,
+    timeControl: {
+      baseSeconds: game.baseSeconds,
+      incrementSecs: game.incrementSecs,
+    },
+    moves: game.moves.map((move) => ({
+      ply: move.ply,
+      san: move.san,
+      uci: move.uci,
+      fenAfter: move.fenAfter,
+      timeSpentMs: move.timeSpentMs,
+      clockAfterMs: move.clockAfterMs,
+    })),
+  };
+}
+
+export async function getGamePgn(gameId: string) {
+  const game = await findById(gameId, true);
+
+  if (!game) {
+    throw new AppError(ErrorCode.GAME_NOT_FOUND, 404, 'Game not found');
+  }
+
+  if (!game.pgn) {
+    throw new AppError(ErrorCode.CONFLICT, 409, 'PGN is not ready yet for this game');
+  }
+
+  return game.pgn;
+}

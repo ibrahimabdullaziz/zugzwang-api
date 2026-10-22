@@ -80,14 +80,16 @@ export async function listByUser(userId: string, params: PaginationParams) {
       };
     }
   }
+const decodedCursor = params.cursor
+  ? decodeCursor(params.cursor)
+  : undefined;
 
-  const decodedCursor = params.cursor ? decodeCursor(params.cursor) : undefined;
-  const query: Prisma.GameFindManyArgs = {
-    where: where,
-    take: take + 1,
-    ...(decodedCursor
-      ? {
-          AND: [
+const query: Prisma.GameFindManyArgs = {
+  where: {
+    AND: [
+      where,
+      ...(decodedCursor
+        ? [
             {
               OR: [
                 { createdAt: { lt: decodedCursor.createdAt } },
@@ -97,27 +99,32 @@ export async function listByUser(userId: string, params: PaginationParams) {
                 },
               ],
             },
-          ],
-        }
-      : {}),
-    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-  };
-  const games = await prisma.game.findMany(query);
+          ]
+        : []),
+    ],
+  },
+  take: take + 1,
+  orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+};
 
-  let nextCursor: string | null = null;
+const games = await prisma.game.findMany(query);
 
-  if (games.length > take) {
-    const nextItem = games.pop();
-    if (nextItem) {
-      nextCursor = encodeCursor({
-        createdAt: nextItem.createdAt,
-        id: nextItem.id,
-      });
-    }
+let nextCursor: string | null = null;
+
+if (games.length > take) {
+  games.pop();
+
+  const lastGame = games[games.length - 1];
+
+  if (lastGame) {
+    nextCursor = encodeCursor({
+      createdAt: lastGame.createdAt,
+      id: lastGame.id,
+    });
   }
-
-  return { games, nextCursor };
 }
+
+return { games, nextCursor };
 
 export async function appendMove(
   gameId: string,

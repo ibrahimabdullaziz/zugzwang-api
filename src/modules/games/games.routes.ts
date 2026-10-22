@@ -55,25 +55,53 @@ gamesRouter.post(
   },
 );
 
-gamesRouter.get('/me', authGuard, validate(listGamesQuerySchema, 'query'), async (req, res, next) => {
-  try {
-    const query = req.query as unknown as ListGamesQueryInput;
-    const result = await listByUser(req.user!.id, {
-      cursor: query.cursor,
-      limit: query.limit,
-    });
+gamesRouter.get(
+  '/me',
+  authGuard,
+  validate(listGamesQuerySchema, 'query'),
+  async (req, res, next) => {
+    try {
+      const query = req.query as unknown as ListGamesQueryInput;
+      const result = await listByUser(req.user!.id, {
+        cursor: query.cursor,
+        limit: query.limit,
+      });
 
-    res.status(200).json(successResponse(result));
-  } catch (error) {
-    next(error);
-  }
-});
+      res.status(200).json(successResponse(result));
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 gamesRouter.get('/:id/moves', validate(gameIdParamsSchema, 'params'), async (req, res, next) => {
   try {
     const params = req.params as GameIdParamsInput;
     const moves = await gamesService.getGameMoves(params.id);
     res.status(200).json(successResponse(moves));
+  } catch (error) {
+    next(error);
+  }
+});
+
+gamesRouter.get('/:id/reply', validate(gameIdParamsSchema, 'params'), async (req, res, next) => {
+  try {
+    const params = req.params as GameIdParamsInput;
+    const game = await gamesService.getGameReplay(params.id);
+    res.status(200).json(successResponse(game));
+  } catch (error) {
+    next(error);
+  }
+});
+
+gamesRouter.get(':id/pgn', validate(gameIdParamsSchema, 'params'), async (req, res, next) => {
+  try {
+    const params = req.params as GameIdParamsInput;
+    const pgn = await gamesService.getGamePgn(params.id);
+
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', `inline; filename="game-${params.id}.pgn"`);
+    res.send(pgn);
   } catch (error) {
     next(error);
   }
@@ -89,24 +117,34 @@ gamesRouter.get('/:id', validate(gameIdParamsSchema, 'params'), async (req, res,
   }
 });
 
-gamesRouter.post('/:id/resign', authGuard, validate(gameIdParamsSchema, 'params'), async (req, res, next) => {
-  try {
-    const params = req.params as GameIdParamsInput;
-    const game = await gamesService.resign(req.user!.id, params.id);
-    res.status(200).json(successResponse(game));
-  } catch (error) {
-    next(error);
-  }
-});
+gamesRouter.post(
+  '/:id/resign',
+  authGuard,
+  validate(gameIdParamsSchema, 'params'),
+  async (req, res, next) => {
+    try {
+      const params = req.params as GameIdParamsInput;
+      const game = await gamesService.resign(req.user!.id, params.id);
+      res.status(200).json(successResponse(game));
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
-gamesRouter.post('/:id/abort', authGuard, validate(gameIdParamsSchema, 'params'), async (req, res, next) => {
-  try {
-    const params = req.params as GameIdParamsInput;
-    const game = await gamesService.abort(req.user!.id, params.id);
-    res.status(200).json(successResponse(game));
-  } catch (error) {
-    next(error);
-  }
-});
+gamesRouter.post(
+  '/:id/abort',
+  authGuard,
+  validate(gameIdParamsSchema, 'params'),
+  async (req, res, next) => {
+    try {
+      const params = req.params as GameIdParamsInput;
+      const game = await gamesService.abort(req.user!.id, params.id);
+      res.status(200).json(successResponse(game));
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 export default gamesRouter;
