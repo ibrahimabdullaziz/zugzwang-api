@@ -1,7 +1,16 @@
-import { Game, Prisma } from '@prisma/client';
+import { Game, Prisma, RatingCategory } from '@prisma/client';
 import { prisma } from '../../db/prisma.js';
 import { AppError } from '../../common/errors/AppError.js';
 import { ErrorCode } from '../../common/errors/codes.js';
+import { decodeCursor, encodeCursor } from '../../common/pagination/cursor.js';
+
+type PaginationParams = {
+  cursor?: string;
+  limit?: number;
+  result?: 'W' | 'L' | 'D';
+  color?: 'w' | 'b';
+  category?: RatingCategory;
+};
 
 export async function create(data: Prisma.GameCreateInput): Promise<Game | null> {
   return await prisma.game.create({
@@ -26,20 +35,85 @@ export async function findByInviteCode(code: string): Promise<Game | null> {
   });
 }
 
-export async function listByUser(userId: string, params: { cursor?: string; limit?: number }) {
+export async function listByUser(userId: string, params: PaginationParams) {
   const take = params.limit || 10;
-  const games = await prisma.game.findMany({
-    where: { OR: [{ blackId: userId }, { whiteId: userId }] },
+
+  let where: Prisma.GameWhereInput;
+
+  if (params.color === 'w') {
+    where = {
+      whiteId: userId,
+    };
+  } else if (params.color === 'b') {
+    where = {
+      blackId: userId,
+    };
+  } else {
+    where = {
+      OR: [{ blackId: userId }, { whiteId: userId }],
+    };
+  }
+
+  if (params.category) {
+    where = { ...where, category: params.category };
+  }
+  if (params.result === 'D') {
+    where = {
+      ...where,
+      result: 'DRAW',
+    };
+  } else if (params.result) {
+    const whiteResult = params.result === 'W' ? 'WHITE_WIN' : 'BLACK_WIN';
+    const blackResult = params.result === 'W' ? 'BLACK_WIN' : 'WHITE_WIN';
+
+    if (params.color === 'w') {
+      where = { ...where, result: whiteResult };
+    } else if (params.color === 'b') {
+      where = { ...where, result: blackResult };
+    } else {
+      where = {
+        ...where,
+        OR: [
+          { whiteId: userId, result: whiteResult },
+          { blackId: userId, result: blackResult },
+        ],
+      };
+    }
+  }
+
+  const decodedCursor = params.cursor ? decodeCursor(params.cursor) : undefined;
+  const query: Prisma.GameFindManyArgs = {
+    where: where,
     take: take + 1,
-    ...(params.cursor ? { cursor: { id: params.cursor }, skip: 1 } : {}),
-    orderBy: { createdAt: 'desc' },
-  });
+    ...(decodedCursor
+      ? {
+          AND: [
+            {
+              OR: [
+                { createdAt: { lt: decodedCursor.createdAt } },
+                {
+                  createdAt: decodedCursor.createdAt,
+                  id: { lt: decodedCursor.id },
+                },
+              ],
+            },
+          ],
+        }
+      : {}),
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+  };
+  const games = await prisma.game.findMany(query);
 
   let nextCursor: string | null = null;
 
   if (games.length > take) {
     const nextItem = games.pop();
-    nextCursor = nextItem?.id ?? null;
+    if (nextItem) {
+      nextCursor = encodeCursor({
+        createdAt: nextItem.createdAt,
+        id: nextItem.id,
+      });
+    }
   }
 
   return { games, nextCursor };
