@@ -8,6 +8,7 @@ import {
   findById as findUserById,
   findByIdWithRatings,
   updateProfile as updateUserProfile,
+  getUserStats,
 } from './users.repository.js';
 import { AppError } from '../../common/errors/AppError.js';
 import { ErrorCode } from '../../common/errors/codes.js';
@@ -98,4 +99,14 @@ export async function updateProfile(id: string, username: string): Promise<SafeU
 
   const updatedUser = await updateUserProfile(id, username);
   return toSafeUser(updatedUser);
+}
+
+export async function getUserStatsByUsername(username: string) {
+  const user = await findByUsername(username);
+
+  if (!user) {
+    throw new AppError(ErrorCode.NOT_FOUND, 404, 'User Not Found.');
+  }
+
+  return await getUserStats(user.id);
 }

@@ -9,6 +9,7 @@ import {
   type UpdateProfileInput,
 } from './users.schema.js';
 import { getRatingHistory } from '../ratings/ratings.service.js';
+import { getUserStats } from './users.repository.js';
 
 export const usersRouter = Router();
 
@@ -49,4 +50,17 @@ usersRouter.get('/:username/rating-history', async (req, res, next) => {
   }
 });
 
+usersRouter.get(
+  '/:username/stats',
+  validate(usernameParamSchema, 'params'),
+  async (req, res, next) => {
+    try {
+      const username = req.params.username as string;
+      const result = await getUserStats(username);
+      res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 export default usersRouter;
