@@ -9,7 +9,6 @@ import {
   type UpdateProfileInput,
 } from './users.schema.js';
 import { getRatingHistory } from '../ratings/ratings.service.js';
-import { getUserStats } from './users.repository.js';
 
 export const usersRouter = Router();
 
@@ -56,7 +55,7 @@ usersRouter.get(
   async (req, res, next) => {
     try {
       const username = req.params.username as string;
-      const result = await getUserStats(username);
+      const result = await usersService.getUserStatsByUsername(username);
       res.status(200).json(result);
     } catch (error) {
       next(error);

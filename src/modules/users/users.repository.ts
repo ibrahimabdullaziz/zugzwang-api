@@ -57,21 +57,29 @@ export async function updateProfile(id: string, username: string): Promise<User>
 }
 
 export async function getUserStats(userId: string) {
-  const stats = prisma.$queryRaw`
-  SELECT 
-    COUNT(*) as total_games,
-    COUNT(*) FILTER(WHERE(whiteId=$1 AND result = 'WHITE_WIN') OR WHERE(blackId=$1 AND result = 'BLACK_WIN')) AS wins
-    COUNT(*) FILTER (WHERE (white_id = $1 AND result = 'BLACK_WIN') OR (black_id = $1 AND result = 'WHITE_WIN')) AS losses,
-    COUNT(*) FILTER(WHERE(result = 'DRAW')) AS draws
-    COUNT(*) FILTER (WHERE white_id = $1) AS as_white_total,
-    COUNT(*) FILTER (WHERE white_id = $1 AND result = 'WHITE_WIN') AS as_white_wins,
-    COUNT(*) FILTER (WHERE black_id = $1) AS as_black_total,
-    COUNT(*) FILTER (WHERE black_id = $1 AND result = 'BLACK_WIN') AS as_black_wins,
-    AVG(EXTRACT(EPOCH FROM (finished_at - started_at))) AS avg_duration_seconds
-
+  return prisma.$queryRaw`
+  SELECT
+    COUNT(*) AS total_games,
+    COUNT(*) FILTER (
+      WHERE ("whiteId" = ${userId} AND result = 'WHITE_WIN')
+         OR ("blackId" = ${userId} AND result = 'BLACK_WIN')
+    ) AS wins,
+    COUNT(*) FILTER (
+      WHERE ("whiteId" = ${userId} AND result = 'BLACK_WIN')
+         OR ("blackId" = ${userId} AND result = 'WHITE_WIN')
+    ) AS losses,
+    COUNT(*) FILTER (WHERE result = 'DRAW') AS draws,
+    COUNT(*) FILTER (WHERE "whiteId" = ${userId}) AS as_white_total,
+    COUNT(*) FILTER (
+      WHERE "whiteId" = ${userId} AND result = 'WHITE_WIN'
+    ) AS as_white_wins,
+    COUNT(*) FILTER (WHERE "blackId" = ${userId}) AS as_black_total,
+    COUNT(*) FILTER (
+      WHERE "blackId" = ${userId} AND result = 'BLACK_WIN'
+    ) AS as_black_wins,
+    AVG(EXTRACT(EPOCH FROM ("finishedAt" - "startedAt"))) AS avg_duration_seconds
   FROM "Game"
-  WHERE whiteId = $1 OR blackId = $1 AND status = 'FINISHED'
+  WHERE ("whiteId" = ${userId} OR "blackId" = ${userId})
+    AND status = 'FINISHED'
   `;
-
-  return stats;
 }

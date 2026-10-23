@@ -125,6 +125,7 @@ if (games.length > take) {
 }
 
 return { games, nextCursor };
+}
 
 export async function appendMove(
   gameId: string,

@@ -94,7 +94,7 @@ gamesRouter.get('/:id/reply', validate(gameIdParamsSchema, 'params'), async (req
   }
 });
 
-gamesRouter.get(':id/pgn', validate(gameIdParamsSchema, 'params'), async (req, res, next) => {
+gamesRouter.get('/:id/pgn', validate(gameIdParamsSchema, 'params'), async (req, res, next) => {
   try {
     const params = req.params as GameIdParamsInput;
     const pgn = await gamesService.getGamePgn(params.id);
