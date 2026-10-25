@@ -1,6 +1,7 @@
 import { Redis } from 'ioredis';
 import { config } from './env.js';
 import { logger } from './logger.js';
+import { events } from '../common/utils/redisEvents.js';
 
 const cacheRedis = new Redis(config.redis.url, {
   retryStrategy(times: number) {
@@ -16,5 +17,9 @@ const cacheRedis = new Redis(config.redis.url, {
 
 const pubRedis = cacheRedis.duplicate();
 const subRedis = cacheRedis.duplicate();
+
+events(cacheRedis, 'Cache Redis');
+events(pubRedis, 'Publisher Redis');
+events(subRedis, 'Subscriber Redis');
 
 export { cacheRedis, pubRedis, subRedis };
