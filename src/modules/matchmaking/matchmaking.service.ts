@@ -2,7 +2,7 @@ import type { Server } from 'socket.io';
 import { AppError } from '../../common/errors/AppError.js';
 import { ErrorCode } from '../../common/errors/codes.js';
 import { create, findActiveByUser } from '../games/games.repository.js';
-import { determineRatingCategory } from '../games/games.service.js';
+import { determineRatingCategory } from '../ratings/category.js';
 import { findByIdWithRatings } from '../users/users.repository.js';
 import type { MatchMaker, QueueEntry } from './matchmaker.js';
 

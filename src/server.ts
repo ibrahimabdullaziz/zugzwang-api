@@ -8,6 +8,7 @@ import { gamesRouter } from './modules/games/games.routes.js';
 import { usersRouter } from './modules/users/users.routes.js';
 import ratingsRouter from './modules/ratings/ratings.routes.js';
 import { createSocketServer } from './realtime/socketServer.js';
+import './config/redis.js';
 
 const apiRouter = Router();
 apiRouter.use('/auth', authRouter);
