@@ -24,6 +24,8 @@ export async function getOrSet<T>(
       // Redis failure: fall back to the loader.
     }
 
+    logger.info({ key }, 'Cache miss');
+
     const data = await loader();
     const jitter = Math.floor(Math.random() * (ttlSeconds * 0.1));
     const actualTTL = ttlSeconds + jitter;

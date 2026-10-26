@@ -15,6 +15,20 @@ const cacheRedis = new Redis(config.redis.url, {
   },
 });
 
+cacheRedis.on('ready', async () => {
+  try {
+    const pong = await cacheRedis.ping();
+    const result = await cacheRedis.set('debug:cache-test', 'ok', 'EX', 60);
+    const value = await cacheRedis.get('debug:cache-test');
+
+    logger.info(
+      { pong, result, value, db: await cacheRedis.get('dbsize') },
+      'Redis cache diagnostic',
+    );
+  } catch (error) {
+    logger.error({ error }, 'Redis cache diagnostic failed');
+  }
+});
 const pubRedis = cacheRedis.duplicate();
 const subRedis = cacheRedis.duplicate();
 

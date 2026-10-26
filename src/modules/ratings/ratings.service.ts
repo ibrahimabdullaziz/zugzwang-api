@@ -3,6 +3,7 @@ import { AppError } from '../../common/errors/AppError.js';
 import { ErrorCode } from '../../common/errors/codes.js';
 import { findRatingHistory, getRatingLeaderboard } from './ratings.repository.js';
 import { findByUsernameWithRatings } from '../users/users.repository.js';
+import { getOrSet } from '../../common/cache/cache.js';
 
 const VALID_CATEGORIES: RatingCategory[] = ['BULLET', 'BLITZ', 'RAPID'];
 
@@ -25,9 +26,11 @@ export async function getLeaderboard(
     );
   }
 
-  const result = await getRatingLeaderboard(category as RatingCategory, convertedLimit, cursor);
+  const cacheKey = `zz:v:leaderboard:${category}:${convertedLimit}:${cursor ?? 'first'}`;
 
-  return result;
+  return getOrSet(cacheKey, 30, () =>
+    getRatingLeaderboard(category as RatingCategory, convertedLimit, cursor),
+  );
 }
 
 export async function getRatingHistory(username: string, category: RatingCategory = 'BLITZ') {
