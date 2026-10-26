@@ -16,9 +16,9 @@ export interface Pair {
 }
 
 export interface MatchMaker {
-  enqueue: (entry: QueueEntry) => void;
-  dequeue: (userId: string) => boolean;
-  tick: () => Pair[];
-  isQueued: (userId: string) => boolean;
-  size: (category?: RatingCategory) => number;
+  enqueue: (entry: QueueEntry) => Promise<void>;
+  dequeue: (userId: string) => Promise<boolean>;
+  tick: () => Promise<Pair[]>;
+  isQueued: (userId: string) => Promise<boolean>;
+  size: (category?: RatingCategory) => Promise<number>;
 }

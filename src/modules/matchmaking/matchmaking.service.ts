@@ -5,19 +5,32 @@ import { create, findActiveByUser } from '../games/games.repository.js';
 import { determineRatingCategory } from '../ratings/category.js';
 import { findByIdWithRatings } from '../users/users.repository.js';
 import type { MatchMaker, QueueEntry } from './matchmaker.js';
+import { logger } from '../../config/logger.js';
 
 export class MatchMaking {
   private intervalId: NodeJS.Timeout | null = null;
+  private isProcessing = false;
 
   constructor(
     private matchMaker: MatchMaker,
     private io: Server,
   ) {}
 
-  public start() {
+  public start(): void {
     if (this.intervalId) return;
+
     this.intervalId = setInterval(() => {
-      this.processMatches();
+      if (this.isProcessing) return;
+
+      this.isProcessing = true;
+
+      void this.processMatches()
+        .catch((error: unknown) => {
+          logger.error({ component: error }, 'Failed to process matches');
+        })
+        .finally(() => {
+          this.isProcessing = false;
+        });
     }, 1000);
   }
 
@@ -33,7 +46,7 @@ export class MatchMaking {
     socketId: string,
     timeControl: { baseSeconds: number; incrementSecs: number },
   ) {
-    if (this.matchMaker.isQueued(userId)) {
+    if (await this.matchMaker.isQueued(userId)) {
       throw new AppError(ErrorCode.CONFLICT, 409, 'This user has been already queued');
     }
 
@@ -60,12 +73,12 @@ export class MatchMaking {
     this.matchMaker.enqueue(queueEntry);
   }
 
-  public leaveQueue(userId: string) {
-    this.matchMaker.dequeue(userId);
+  public async leaveQueue(userId: string) {
+    await this.matchMaker.dequeue(userId);
   }
 
   async processMatches() {
-    const pairs = this.matchMaker.tick();
+    const pairs = await this.matchMaker.tick();
     if (!pairs || pairs.length === 0) {
       return;
     }

@@ -10,14 +10,14 @@ export class InMemoryMatchmaker implements MatchMaker {
 
   private readonly userToCategoryMap = new Map<string, RatingCategory>();
 
-  enqueue(entry: QueueEntry): void {
+  async enqueue(entry: QueueEntry): Promise<void> {
     const queue = this.queues.get(entry.category) ?? [];
     queue.push(entry);
     this.queues.set(entry.category, queue);
     this.userToCategoryMap.set(entry.userId, entry.category);
   }
 
-  dequeue(userId: string): boolean {
+  async dequeue(userId: string): Promise<boolean> {
     const category = this.userToCategoryMap.get(userId);
     if (!category) return false;
 
@@ -32,7 +32,7 @@ export class InMemoryMatchmaker implements MatchMaker {
     return true;
   }
 
-  tick(): Pair[] {
+  async tick(): Promise<Pair[]> {
     const allMatchedPairs: Pair[] = [];
     const now = Date.now();
 
@@ -92,11 +92,11 @@ export class InMemoryMatchmaker implements MatchMaker {
     return allMatchedPairs;
   }
 
-  isQueued(userId: string): boolean {
+  async isQueued(userId: string): Promise<boolean> {
     return this.userToCategoryMap.has(userId);
   }
 
-  size(category?: RatingCategory): number {
+  async size(category?: RatingCategory): Promise<number> {
     if (category) return this.queues.get(category)?.length ?? 0;
     return [...this.queues.values()].reduce((total, queue) => total + queue.length, 0);
   }
