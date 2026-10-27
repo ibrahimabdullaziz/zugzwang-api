@@ -11,6 +11,9 @@ import { findById as findGameById } from '../modules/games/games.repository.js';
 import { GameSessionManager } from './GameSessionManager.js';
 import { gameJoinSchema } from './schemas.js';
 import { safeHandler } from './safeHandler.js';
+import { pubRedis, subRedis } from '../config/redis.js';
+import { createAdapter as createRedisAdapter } from '@socket.io/redis-adapter';
+import { RedisMatchmaker } from '../modules/matchmaking/RedisMatchmaker.js';
 
 interface SocketServerDeps {
   logger: Logger;
@@ -26,7 +29,10 @@ export function createSocketServer(httpServer: HttpServer, deps: SocketServerDep
       credentials: true,
     },
   });
-  const matchmaking = new MatchMaking(new InMemoryMatchmaker(), io);
+
+  io.adapter(createRedisAdapter(pubRedis, subRedis));
+
+  const matchmaking = new MatchMaking(new RedisMatchmaker(), io);
   matchmaking.start();
 
   io.use((socket, next) => {
