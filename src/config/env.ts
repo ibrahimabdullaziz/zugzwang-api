@@ -26,7 +26,11 @@ const envSchema = z
     SMTP_PASS: z.string().default(''),
     SMTP_FROM: z.string().trim().default(''),
 
-    LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent']).default('info'),
+    LOG_LEVEL: z
+      .enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent'])
+      .default('info'),
+
+    APP_URL: z.string().url().default('http://localhost:3000'),
 
     FEATURE_REGISTRATION: booleanFromEnv.default(false),
     FEATURE_EMAIL: booleanFromEnv.default(false),
@@ -75,6 +79,9 @@ export const config = Object.freeze({
     port: env.PORT,
     nodeEnv: env.NODE_ENV,
     corsOrigins: Object.freeze(env.CORS_ORIGINS),
+  }),
+  app: Object.freeze({
+    url: env.APP_URL,
   }),
   db: Object.freeze({
     url: env.DATABASE_URL,
