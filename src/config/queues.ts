@@ -23,17 +23,17 @@ export const defaultJobOptions: DefaultJobOptions = {
   },
 };
 
-export const EmailQueue = new Queue(QueueName.EMAIL, {
+export const EmailQueue = new Queue<EmailJobPayload>(QueueName.EMAIL, {
   connection: bullRedis,
   defaultJobOptions,
 });
 
-export const AnalysisQueue = new Queue(QueueName.ANALYSIS, {
+export const AnalysisQueue = new Queue<AnalysisJobPayload>(QueueName.ANALYSIS, {
   connection: bullRedis,
   defaultJobOptions,
 });
 
-export const MaintenanceQueue = new Queue(QueueName.MAINTENANCE, {
+export const MaintenanceQueue = new Queue<MaintenanceJobPayload>(QueueName.MAINTENANCE, {
   connection: bullRedis,
   defaultJobOptions,
 });
