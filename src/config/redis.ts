@@ -15,6 +15,10 @@ const cacheRedis = new Redis(config.redis.url, {
   },
 });
 
+const bullRedis = new Redis(config.redis.url, {
+  maxRetriesPerRequest: null,
+});
+
 cacheRedis.on('ready', async () => {
   try {
     const pong = await cacheRedis.ping();
@@ -29,11 +33,13 @@ cacheRedis.on('ready', async () => {
     logger.error({ error }, 'Redis cache diagnostic failed');
   }
 });
+
 const pubRedis = cacheRedis.duplicate();
 const subRedis = cacheRedis.duplicate();
 
 events(cacheRedis, 'Cache Redis');
 events(pubRedis, 'Publisher Redis');
 events(subRedis, 'Subscriber Redis');
+events(bullRedis, 'BullMQ Redis');
 
-export { cacheRedis, pubRedis, subRedis };
+export { cacheRedis, pubRedis, subRedis, bullRedis };
