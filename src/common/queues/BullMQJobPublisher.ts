@@ -1,6 +1,5 @@
 import { AnalysisQueue, EmailJobPayload, EmailQueue } from '../../config/queues.js';
-import { JobPublisher } from './Publisher.js';
-
+import type { JobPublisher } from '../../common/queues/Publisher.js';
 export class BullMQJobPublisher implements JobPublisher {
   async publishEmail(payload: EmailJobPayload): Promise<void> {
     await EmailQueue.add('send-email', payload);

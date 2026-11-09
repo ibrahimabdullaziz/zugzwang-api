@@ -54,6 +54,11 @@ enum MoveClass {
   BLUNDER
 }
 
+enum AuthTokenType {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+}
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -72,6 +77,7 @@ model User {
   createdAt       DateTime @default(now())
   ratings         Rating[]
   refreshTokens   RefreshToken[]
+  authTokens      AuthToken[]
   whiteGames      Game[]   @relation("White")
   blackGames      Game[]   @relation("Black")
 }
@@ -184,4 +190,17 @@ model MoveAnalysis {
   winPctDrop  Float
   class       MoveClass
   @@unique([analysisId, ply])
+}
+
+model AuthToken {
+  id        String        @id @default(uuid())
+  userId    String
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String        @unique
+  type      AuthTokenType
+  expiresAt DateTime
+  createdAt DateTime      @default(now())
+
+  @@index([userId, type])
+  @@index([expiresAt])
 }

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { RegisterInputDto, LoginInputDto } from './auth.schema.js';
+import type { RegisterInputDto, LoginInputDto, verifyEmailDto } from './auth.schema.js';
 import { prisma } from '../../db/prisma.js';
 import { generateRefreshToken, hashToken, signAccessToken } from '../../common/security/tokens.js';
 import {
@@ -9,10 +9,16 @@ import {
 } from '../../common/security/password.js';
 import { AppError } from '../../common/errors/AppError.js';
 import { ErrorCode } from '../../common/errors/codes.js';
-import type { User } from '@prisma/client';
+import { AuthTokenType, type User } from '@prisma/client';
 import { type SafeUser } from '../users/users.service.js';
+import type { JobPublisher } from '../../common/queues/Publisher.js';
+import { BullMQJobPublisher } from '../../common/queues/BullMQJobPublisher.js';
+import { config } from '../../config/env.js';
 
 const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const EMAIL_VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000; // 1 day
+
+const jobPublisher: JobPublisher = new BullMQJobPublisher();
 
 function toSafeUser(user: User): SafeUser {
   const { passwordHash, ...safeUser } = user;
@@ -47,6 +53,11 @@ export async function register(dto: RegisterInputDto): Promise<AuthResponse> {
   const familyId = randomUUID();
   const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_MS);
 
+  const verificationToken = generateRefreshToken();
+  const verificationTokenHash = hashToken(verificationToken);
+  const verificationExpiresAt = new Date(Date.now() + EMAIL_VERIFICATION_TTL_MS);
+  const verifyUrl = `${config.app.url}/auth/verify-email?token=${encodeURIComponent(verificationToken)}`;
+
   const createdUser = await prisma.$transaction(async (tx) => {
     const user = await tx.user.create({
       data: {
@@ -72,7 +83,23 @@ export async function register(dto: RegisterInputDto): Promise<AuthResponse> {
       },
     });
 
+    await tx.authToken.create({
+      data: {
+        userId: user.id,
+        type: AuthTokenType.EMAIL_VERIFICATION,
+        tokenHash: verificationTokenHash,
+        expiresAt: verificationExpiresAt,
+      },
+    });
+
     return user;
+  });
+
+  await jobPublisher.publishEmail({
+    to: email,
+    subject: 'Verify Email',
+    template: 'verify-email',
+    context: { token: verificationToken, username: username, url: verifyUrl },
   });
 
   const accessToken = signAccessToken(createdUser.id, createdUser.role);
@@ -219,5 +246,44 @@ export async function logoutAll(userId: string): Promise<void> {
     data: {
       revokedAt: new Date(),
     },
+  });
+}
+
+export async function verifyEmail(dto: verifyEmailDto): Promise<void> {
+  const tokenHash = hashToken(dto.token);
+  const now = new Date();
+
+  await prisma.$transaction(async (tx) => {
+    const token = await tx.authToken.findFirst({
+      where: {
+        tokenHash: tokenHash,
+        type: AuthTokenType.EMAIL_VERIFICATION,
+        expiresAt: { gt: now },
+      },
+    });
+
+    if (!token) {
+      throw new AppError(ErrorCode.UNAUTHORIZED, 401, 'Invalid Token');
+    }
+
+    const tokenCounter = await tx.authToken.deleteMany({
+      where: {
+        tokenHash: tokenHash,
+        type: AuthTokenType.EMAIL_VERIFICATION,
+        expiresAt: { gt: now },
+        id: token.id,
+      },
+    });
+
+    if (tokenCounter.count !== 1) {
+      throw new AppError(ErrorCode.UNAUTHORIZED, 401, 'Invalid Token');
+    }
+
+    await tx.user.updateMany({
+      where: { id: token.userId, emailVerifiedAt: null },
+      data: {
+        emailVerifiedAt: now,
+      },
+    });
   });
 }

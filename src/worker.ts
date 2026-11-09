@@ -3,11 +3,12 @@ import { bullRedis } from './config/redis.js';
 import { QueueName } from './config/queues.js';
 import { registerWorkerEvents } from './common/queues/workerEvents.js';
 import { logger } from './config/logger.js';
+import { emailProcessor } from './modules/jobs/processors/email.processor.js';
 
 const emailWorker = new Worker(
   QueueName.EMAIL,
   async (job) => {
-    // Process email job
+    await emailProcessor(job);
   },
   {
     connection: bullRedis,
