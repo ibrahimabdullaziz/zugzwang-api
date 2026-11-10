@@ -11,6 +11,12 @@ import {
   type RegisterInputDto,
   type LoginInputDto,
   type RefreshTokenDto,
+  resetPasswordSchema,
+  ResetPasswordDto,
+  ForgotPasswordDto,
+  forgotPasswordSchema,
+  verifyEmailDto,
+  verifyEmailSchema,
 } from './auth.schema.js';
 
 export const authRouter = Router();
@@ -78,5 +84,50 @@ authRouter.get('/me', authGuard, async (req, res, next) => {
     next(err);
   }
 });
+
+// POST /auth/verify-email
+authRouter.post('/verify-email', validate(verifyEmailSchema, 'body'), async (req, res, next) => {
+  try {
+    const body = req.body as verifyEmailDto;
+    await authService.verifyEmail(body);
+    res.status(200).json(successResponse({ message: 'Email verified successfully.' }));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /auth/forgot-password
+authRouter.post(
+  '/forgot-password',
+  validate(forgotPasswordSchema, 'body'),
+  async (req, res, next) => {
+    try {
+      const body = req.body as ForgotPasswordDto;
+      await authService.forgotPassword(body);
+      res.status(200).json(
+        successResponse({
+          message: 'If an account with that email exists, a reset link has been sent.',
+        }),
+      );
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// POST /auth/reset-password
+authRouter.post(
+  '/reset-password',
+  validate(resetPasswordSchema, 'body'),
+  async (req, res, next) => {
+    try {
+      const body = req.body as ResetPasswordDto;
+      await authService.resetPassword(body);
+      res.status(200).json(successResponse({ message: 'Password reset successfully.' }));
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 export default authRouter;
