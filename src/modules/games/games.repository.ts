@@ -80,51 +80,49 @@ export async function listByUser(userId: string, params: PaginationParams) {
       };
     }
   }
-const decodedCursor = params.cursor
-  ? decodeCursor(params.cursor)
-  : undefined;
+  const decodedCursor = params.cursor ? decodeCursor(params.cursor) : undefined;
 
-const query: Prisma.GameFindManyArgs = {
-  where: {
-    AND: [
-      where,
-      ...(decodedCursor
-        ? [
-            {
-              OR: [
-                { createdAt: { lt: decodedCursor.createdAt } },
-                {
-                  createdAt: decodedCursor.createdAt,
-                  id: { lt: decodedCursor.id },
-                },
-              ],
-            },
-          ]
-        : []),
-    ],
-  },
-  take: take + 1,
-  orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-};
+  const query: Prisma.GameFindManyArgs = {
+    where: {
+      AND: [
+        where,
+        ...(decodedCursor
+          ? [
+              {
+                OR: [
+                  { createdAt: { lt: decodedCursor.createdAt } },
+                  {
+                    createdAt: decodedCursor.createdAt,
+                    id: { lt: decodedCursor.id },
+                  },
+                ],
+              },
+            ]
+          : []),
+      ],
+    },
+    take: take + 1,
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+  };
 
-const games = await prisma.game.findMany(query);
+  const games = await prisma.game.findMany(query);
 
-let nextCursor: string | null = null;
+  let nextCursor: string | null = null;
 
-if (games.length > take) {
-  games.pop();
+  if (games.length > take) {
+    games.pop();
 
-  const lastGame = games[games.length - 1];
+    const lastGame = games[games.length - 1];
 
-  if (lastGame) {
-    nextCursor = encodeCursor({
-      createdAt: lastGame.createdAt,
-      id: lastGame.id,
-    });
+    if (lastGame) {
+      nextCursor = encodeCursor({
+        createdAt: lastGame.createdAt,
+        id: lastGame.id,
+      });
+    }
   }
-}
 
-return { games, nextCursor };
+  return { games, nextCursor };
 }
 
 export async function appendMove(

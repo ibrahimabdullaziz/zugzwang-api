@@ -14,6 +14,10 @@ import { safeHandler } from './safeHandler.js';
 import { pubRedis, subRedis } from '../config/redis.js';
 import { createAdapter as createRedisAdapter } from '@socket.io/redis-adapter';
 import { RedisMatchmaker } from '../modules/matchmaking/RedisMatchmaker.js';
+import {
+  setPlayerConnected,
+  setPlayerDisconnected,
+} from '../modules/games/game-presence.service.js';
 
 interface SocketServerDeps {
   logger: Logger;
@@ -112,11 +116,11 @@ export function createSocketServer(httpServer: HttpServer, deps: SocketServerDep
 
         await session.handleReconnect(userId, socket.id, io);
         if (isPlayer) {
-          gameSession.setPlayerSocket(
-            socket.id,
-            gameId,
-            userId === session.whiteId ? 'white' : 'black',
-          );
+          const color = userId === session.whiteId ? 'white' : 'black';
+
+          await setPlayerConnected(gameId, color);
+
+          gameSession.setPlayerSocket(socket.id, gameId, color);
         }
 
         await socket.join(roomName);
@@ -328,8 +332,21 @@ export function createSocketServer(httpServer: HttpServer, deps: SocketServerDep
         logger.info({ socketId: socket.id, reason }, 'Client disconnected');
 
         const sessionManager = GameSessionManager.getInstance();
-        const session = sessionManager.removePlayerSocket(socket.id);
-        if (session) await session.handleDisconnect(socket.id, io);
+        const disconnected = sessionManager.removePlayerSocket(socket.id);
+
+        if (disconnected) {
+          const { session, gameId, role } = disconnected;
+
+          const isCurrentSocket =
+            role === 'white'
+              ? session.whiteSocketId === socket.id
+              : session.blackSocketId === socket.id;
+
+          if (isCurrentSocket) {
+            await setPlayerDisconnected(gameId, role);
+            await session.handleDisconnect(socket.id, io);
+          }
+        }
 
         if (socket.data?.user?.id) {
           matchmaking.leaveQueue(socket.data.user.id);

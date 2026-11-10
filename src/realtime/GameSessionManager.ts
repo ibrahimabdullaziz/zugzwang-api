@@ -51,18 +51,26 @@ export class GameSessionManager {
     this.sessions.delete(gameId);
   }
 
-  public setPlayerSocket(
-    socketId: string,
-    gameId: string,
-    role: 'white' | 'black',
-  ): void {
+  public setPlayerSocket(socketId: string, gameId: string, role: 'white' | 'black'): void {
     this.playerSockets.set(socketId, { gameId, role });
   }
 
-  public removePlayerSocket(socketId: string): GameSession | undefined {
+  public removePlayerSocket(socketId: string) {
     const association = this.playerSockets.get(socketId);
+
+    if (!association) return null;
+
     this.playerSockets.delete(socketId);
-    return association ? this.sessions.get(association.gameId) : undefined;
+
+    const session = this.sessions.get(association.gameId);
+
+    if (!session) return null;
+
+    return {
+      session,
+      gameId: association.gameId,
+      role: association.role,
+    };
   }
 
   public getSession(gameId: string): GameSession | undefined {
