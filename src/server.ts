@@ -9,12 +9,18 @@ import { usersRouter } from './modules/users/users.routes.js';
 import ratingsRouter from './modules/ratings/ratings.routes.js';
 import { createSocketServer } from './realtime/socketServer.js';
 import './config/redis.js';
+import authGuard from './common/middleware/authGuard.js';
+import { Role } from '@prisma/client';
+import roleGuard from './common/middleware/roleGuard.js';
+import { bullBoardRouter } from './modules/jobs/bull-board.router.js';
 
 const apiRouter = Router();
 apiRouter.use('/auth', authRouter);
 apiRouter.use('/games', gamesRouter);
 apiRouter.use('/users', usersRouter);
 apiRouter.use('/leaderboard', ratingsRouter);
+
+apiRouter.use('/admin/queues', authGuard, roleGuard(Role.ADMIN), bullBoardRouter);
 
 const app = createApp({
   routes: apiRouter,

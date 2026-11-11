@@ -27,7 +27,7 @@ const maintenanceWorker = new Worker(QueueName.MAINTENANCE, maintenanceProcessor
 const analysisWorker = new Worker(
   QueueName.ANALYSIS,
   async (job) => {
-    analysisProcessor(job);
+    await analysisProcessor(job);
   },
   {
     connection: bullRedis,

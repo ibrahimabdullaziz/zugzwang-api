@@ -1,5 +1,4 @@
 import { MatchMaking } from './../modules/matchmaking/matchmaking.service.js';
-import { InMemoryMatchmaker } from '../modules/matchmaking/InMemoryMatchmaker.js';
 import { gameActionSchema, gameMoveSchema, queueJoinSchema } from './schemas.js';
 import { Server, Socket } from 'socket.io';
 import { verifyAccessToken } from '../common/security/tokens.js';
