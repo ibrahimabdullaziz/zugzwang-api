@@ -174,7 +174,9 @@ model GameAnalysis {
   accuracyBlack Float?
   failureReason String?
   moves         MoveAnalysis[]
+  leaseToken String?
   createdAt     DateTime       @default(now())
+  startedAt DateTime?
   completedAt   DateTime?
 }
 

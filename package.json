@@ -17,6 +17,8 @@
     "play:socket": "node --env-file-if-exists=.env --import tsx src/scripts/socket-play.ts"
   },
   "dependencies": {
+    "@bull-board/api": "^9.13.0",
+    "@bull-board/express": "^9.13.0",
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0",
     "@socket.io/redis-adapter": "^8.3.0",
