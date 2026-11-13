@@ -9,7 +9,9 @@ export interface EngineEvaluation {
 export interface EngineOptions {
   depth?: number;
   moveTime?: number;
-  skillLevel?: number; // 0 to 20
+  skillLevel?: number;
+  targetElo?: number;
+  useEloLimit?: boolean;
 }
 
 export interface IEngine {

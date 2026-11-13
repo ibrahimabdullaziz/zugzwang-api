@@ -121,6 +121,18 @@ export class UciEngine implements IEngine {
       await this.waitUntilReady();
     }
 
+    if (options?.useEloLimit !== undefined) {
+      this.process.stdin.write(`setoption name UCI_limitStrength value ${options.useEloLimit}\n`);
+    }
+
+    if (options?.useEloLimit && options?.targetElo !== undefined) {
+      this.process.stdin.write(`setoption name UCI_Elo value ${options.targetElo}\n`);
+    }
+
+    if (options?.skillLevel !== undefined && options.useEloLimit !== undefined) {
+      await this.waitUntilReady();
+    }
+
     this.currentEvaluation = { depth: 0 };
 
     const gamePromise = new Promise<EngineEvaluation>((resolve, reject) => {
@@ -192,5 +204,19 @@ export class UciEngine implements IEngine {
       throw new AppError(ErrorCode.FORBIDDEN, 403, 'Skill level must be between 0 and 20');
     }
     this.process.stdin.write(`setoption name Skill Level value ${level}\n`);
+  }
+
+  async setEloLimit(enabled: boolean, elo?: number): Promise<void> {
+    if (enabled && (elo === undefined || elo < 1320 || elo > 3190)) {
+      throw new Error('Elo must be between 1320 and 3190');
+    }
+
+    this.process.stdin.write(`setoption name UCI_LimitStrength value ${enabled}\n`);
+
+    if (enabled) {
+      this.process.stdin.write(`setoption name UCI_Elo value ${elo}\n`);
+    }
+
+    await this.waitUntilReady();
   }
 }

@@ -2,6 +2,7 @@ import type { Server } from 'socket.io';
 import type { Logger } from 'pino';
 import type { GameSession } from './GameSession.js';
 import type { EnginePool } from '../modules/engine/EnginePool.js';
+import { getEngineDifficulty } from '../modules/engine/engineDifficulty.js';
 
 const scheduledEngineGames = new Set<string>();
 
@@ -35,9 +36,13 @@ export async function scheduleEngineMove(
       throw new Error('Engine level is missing');
     }
 
+    const difficulty = getEngineDifficulty(level);
+
     const evaluation = await enginePool.evaluate(session.gameInstance.fen, {
-      moveTime: getMoveTimeForLevel(level),
-      skillLevel: getSkillLevelForLevel(level),
+      moveTime: difficulty.moveTime,
+      skillLevel: difficulty.skillLevel,
+      useEloLimit: difficulty.useEloLimit,
+      targetElo: difficulty.targetElo,
     });
 
     if (session.game.status !== 'ACTIVE') return;
