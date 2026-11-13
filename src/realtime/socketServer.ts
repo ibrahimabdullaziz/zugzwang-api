@@ -17,14 +17,17 @@ import {
   setPlayerConnected,
   setPlayerDisconnected,
 } from '../modules/games/game-presence.service.js';
+import type { EnginePool } from '../modules/engine/EnginePool.js';
+import { scheduleEngineMove, triggerEngineMove } from './engineMove.js';
 
 interface SocketServerDeps {
   logger: Logger;
   corsOrigin: string | readonly string[];
+  enginePool: EnginePool;
 }
 
 export function createSocketServer(httpServer: HttpServer, deps: SocketServerDeps) {
-  const { logger, corsOrigin } = deps;
+  const { logger, corsOrigin, enginePool } = deps;
   const io: Server = new Server(httpServer, {
     cors: {
       origin: Array.isArray(corsOrigin) ? [...corsOrigin] : (corsOrigin as string),
@@ -129,6 +132,17 @@ export function createSocketServer(httpServer: HttpServer, deps: SocketServerDep
           role: role,
           clocks: session.clock.getSnapshot(),
         });
+
+        if (game.mode === 'VS_ENGINE' && game.status === 'ACTIVE') {
+          const engineTurn =
+            session.gameInstance.turn === game.whiteId
+              ? game.whiteId === null
+              : game.blackId === null;
+
+          if (engineTurn) {
+            triggerEngineMove(session, io, enginePool, logger);
+          }
+        }
       }, logger),
     );
 
@@ -161,6 +175,16 @@ export function createSocketServer(httpServer: HttpServer, deps: SocketServerDep
             clocks: move.clocks,
           });
 
+          if (session.game.mode === 'VS_ENGINE' && session.game.status === 'ACTIVE') {
+            const sideToMove = session.gameInstance.turn;
+
+            const engineTurn =
+              sideToMove === 'w' ? session.whiteId === null : session.blackId === null;
+
+            if (engineTurn) {
+              triggerEngineMove(session, io, enginePool, logger);
+            }
+          }
           ack({ ok: true });
         },
         logger,

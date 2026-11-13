@@ -223,7 +223,11 @@ export class GameSession {
       const sideToMove = this.gameInstance.turn;
       const currentPlayerId = sideToMove === 'w' ? this.whiteId : this.blackId;
 
-      if (currentPlayerId !== userId) {
+      if (userId === 'ENGINE') {
+        if (this.game.mode !== 'VS_ENGINE' || currentPlayerId !== null) {
+          throw new AppError(ErrorCode.NOT_YOUR_TURN, 400, 'It is not engine turn');
+        }
+      } else if (currentPlayerId !== userId) {
         throw new AppError(ErrorCode.NOT_YOUR_TURN, 400, 'It is not your turn');
       }
 

@@ -116,6 +116,11 @@ export class UciEngine implements IEngine {
       throw new AppError(ErrorCode.GAME_NOT_FOUND, 404, 'Engine is busy');
     }
 
+    if (options?.skillLevel !== undefined) {
+      this.skillLevel(options.skillLevel);
+      await this.waitUntilReady();
+    }
+
     this.currentEvaluation = { depth: 0 };
 
     const gamePromise = new Promise<EngineEvaluation>((resolve, reject) => {
@@ -124,6 +129,7 @@ export class UciEngine implements IEngine {
     });
 
     this.process.stdin.write(`position fen ${fen}\n`);
+
     if (options?.depth) {
       this.process.stdin.write(`go depth ${options.depth}\n`);
     } else if (options?.moveTime) {

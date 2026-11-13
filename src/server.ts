@@ -13,6 +13,7 @@ import authGuard from './common/middleware/authGuard.js';
 import { Role } from '@prisma/client';
 import roleGuard from './common/middleware/roleGuard.js';
 import { bullBoardRouter } from './modules/jobs/bull-board.router.js';
+import { EnginePool } from './modules/engine/EnginePool.js';
 
 const apiRouter = Router();
 apiRouter.use('/auth', authRouter);
@@ -28,9 +29,13 @@ const app = createApp({
 });
 
 const server = createServer(app);
+const enginePool = new EnginePool();
+enginePool.initialize();
+
 createSocketServer(server, {
   logger,
   corsOrigin: config.server.corsOrigins,
+  enginePool,
 });
 
 server.on('error', (error) => {
