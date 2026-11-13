@@ -4,11 +4,13 @@ import { validate } from '../../common/middleware/validate.js';
 import { successResponse } from '../../common/utils/apiResponse.js';
 import { listByUser } from './games.repository.js';
 import {
+  createEngineGameBodySchema,
   createGameBodySchema,
   gameIdParamsSchema,
   joinGameParamsSchema,
   listGamesQuerySchema,
   type CreateGameBodyInput,
+  type CreateEngineGameBodyInput,
   type GameIdParamsInput,
   type JoinGameParamsInput,
   type ListGamesQueryInput,
@@ -141,6 +143,28 @@ gamesRouter.post(
       const params = req.params as GameIdParamsInput;
       const game = await gamesService.abort(req.user!.id, params.id);
       res.status(200).json(successResponse(game));
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+gamesRouter.post(
+  '/engine',
+  authGuard,
+  validate(createEngineGameBodySchema, 'body'),
+  async (req, res, next) => {
+    try {
+      const body = req.body as CreateEngineGameBodyInput;
+
+      const game = await gamesService.createEngineGame(
+        req.user!.id,
+        body.level,
+        body.timeControl,
+        resolvePlayerColor(body.color),
+      );
+
+      res.status(201).json(successResponse(game));
     } catch (error) {
       next(error);
     }

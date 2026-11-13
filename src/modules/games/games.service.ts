@@ -64,6 +64,35 @@ export async function createChallenge(
   });
 }
 
+export async function createEngineGame(
+  userId: string,
+  level: number,
+  timeControl: TimeControl,
+  color?: Color,
+) {
+  if (await findActiveByUser(userId)) {
+    throw new AppError(ErrorCode.CONFLICT, 409, 'You already have an active game');
+  }
+
+  const chosenColor: Color = (color ?? Math.random() > 0.5) ? 'w' : 'b';
+  const whiteId = chosenColor === 'w' ? userId : null;
+  const blackId = chosenColor === 'b' ? userId : null;
+
+  const ratingCategory = determineRatingCategory(timeControl);
+
+  return create({
+    mode: 'VS_ENGINE',
+    status: 'ACTIVE',
+    rated: false,
+    engineLevel: level,
+    category: ratingCategory,
+    ...timeControl,
+    startedAt: new Date(),
+    white: whiteId ? { connect: { id: whiteId } } : undefined,
+    black: blackId ? { connect: { id: blackId } } : undefined,
+  });
+}
+
 export async function joinByCode(userId: string, code: string): Promise<Game | null> {
   const game = await findByInviteCode(code);
   if (!game) {

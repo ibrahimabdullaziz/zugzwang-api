@@ -24,7 +24,17 @@ export const listGamesQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(50).default(10),
 });
 
+export const createEngineGameBodySchema = z.object({
+  level: z.number().int().min(0).max(20),
+  color: z.enum(['white', 'black', 'random']).optional(),
+  timeControl: z.object({
+    baseSeconds: z.number().int().min(10).max(3600).default(300),
+    incrementSecs: z.number().int().min(0).max(60).default(0),
+  }),
+});
+
 export type CreateGameBodyInput = z.infer<typeof createGameBodySchema>;
 export type JoinGameParamsInput = z.infer<typeof joinGameParamsSchema>;
 export type GameIdParamsInput = z.infer<typeof gameIdParamsSchema>;
 export type ListGamesQueryInput = z.infer<typeof listGamesQuerySchema>;
+export type CreateEngineGameBodyInput = z.infer<typeof createEngineGameBodySchema>;
